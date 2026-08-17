@@ -1,0 +1,61 @@
+<rml>
+<head>
+	<title>Set up Tony Hawk's Project 8</title>
+	<link type="text/rcss" href="base.rcss"/>
+</head>
+<!-- The state class lands on this element (RmlUi's document *is* the body), and
+     base.rcss decides which panel that reveals. One class, one source of truth. -->
+<body class="st-welcome">
+	<main class="screen">
+		<div class="card">
+			<header>
+				<h1 class="wordmark">
+					<span class="line1">TONY HAWK'S</span><br/>
+					<span class="line2">PROJECT 8</span>
+				</h1>
+				<p class="subtitle">Supported: the 2006 retail disc.</p>
+			</header>
+
+			<h2 id="heading">Set up your game</h2>
+			<p id="detail" class="subtitle">Choose your disc image and this will do the rest.</p>
+
+			<div id="disc_path" class="path panel-path"></div>
+
+			<!-- welcome / picking -->
+			<div class="panel panel-welcome actions">
+				<button id="browse" class="primary">Choose disc image…</button>
+				<button id="quit" class="ghost">Not now</button>
+			</div>
+
+			<!-- verifying / extracting -->
+			<div class="panel panel-progress">
+				<!-- A real bar. RmlUi's <progress> takes `value` in 0..1 and needs a
+				     `fill-image` or a styled `progress fill` to be visible - see
+				     base.rcss. The worker has always emitted a fraction per chunk;
+				     nothing new is measured here, it is only finally shown. -->
+				<progress id="extract_bar" class="bar" value="0"/>
+				<p id="extract_progress_text" class="subtitle">0%</p>
+				<div class="panel-cancel actions">
+					<button id="cancel_extract" class="ghost">Stop</button>
+				</div>
+			</div>
+
+			<!-- done -->
+			<div class="panel panel-done actions">
+				<button id="continue_home" class="primary">Continue</button>
+			</div>
+
+			<!-- every failure state shares one panel; the copy above differs -->
+			<div class="panel panel-fail actions">
+				<button id="retry" class="primary">Choose another file</button>
+				<button id="close" class="ghost">Close</button>
+			</div>
+
+			<p class="footer">
+				This port contains no game content and will never download any.
+				Your disc image is read, never modified, and never sent anywhere.
+			</p>
+		</div>
+	</main>
+</body>
+</rml>

@@ -1,0 +1,16 @@
+# Check every text file out with LF, on every platform.
+#
+# Without this, a Windows checkout converts text to CRLF and the same file has
+# different bytes on different machines. That matters here beyond tidiness: the
+# release packager compares the UI assets in this repository against the ones
+# the launcher was built with, and refuses to ship an archive when they differ.
+# Line-ending conversion makes that check fail on Windows for files nobody
+# edited.
+* text=auto eol=lf
+
+# Assets the launcher loads and licence texts that ship verbatim. Marking them
+# binary keeps git from touching their contents at all.
+*.png binary
+*.bmp binary
+*.ttf binary
+*.patch -text

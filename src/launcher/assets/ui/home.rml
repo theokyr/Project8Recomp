@@ -1,0 +1,126 @@
+<rml>
+<head>
+	<title>Tony Hawk's Project 8</title>
+	<link type="text/rcss" href="base.rcss"/>
+</head>
+<body class="st-ready">
+	<main class="screen">
+		<div class="card">
+			<header>
+				<h1 class="wordmark">
+					<span class="line1">TONY HAWK'S</span><br/>
+					<!-- RmlUi's entity table is not HTML's: &mdash; renders literally.
+					     Use the character, or a numeric entity. -->
+					<span class="line2">PROJECT 8</span>
+				</h1>
+				<p class="subtitle">Xbox 360, 2006 &#8212; running natively on this machine.</p>
+			</header>
+
+			<div class="row">
+				<!-- No `ready` class here. The pill's colour is a status, and baking
+				     the green one into the markup meant the Display and About
+				     screens wore "everything is fine" as a label. SetState owns it. -->
+				<span id="status_pill" class="pill">Ready to play</span>
+				<div class="spacer"/>
+			</div>
+
+			<!-- No <h2 id="heading"> here on purpose. The pill above already states
+			     the status as a sentence, and repeating it as a heading says the
+			     same thing twice in two type sizes. SetText("heading") simply
+			     finds nothing, which is the intended no-op. -->
+			<p id="detail" class="subtitle">Your game is set up. Nothing else needs doing.</p>
+
+			<div class="panel panel-ready actions">
+				<button id="play" class="primary">Play</button>
+				<button id="settings" class="ghost">Display</button>
+				<button id="folder" class="ghost">Open save folder</button>
+				<button id="about" class="ghost">About</button>
+			</div>
+
+			<!-- Display settings. Every row is a button that cycles its own
+			     choices: four settings and a pad to drive them, where a dropdown
+			     would need a popup, a list widget and a focus trap to say the
+			     same thing. The value spans carry ids of their own because a
+			     click can land on the text rather than the button. -->
+			<div class="panel panel-settings">
+				<div class="setting-row">
+					<span class="setting-label">Resolution</span>
+					<div class="spacer"/>
+					<button id="set_resolution" class="ghost setting-value">
+						<span id="set_resolution_value">Game default</span>
+					</button>
+				</div>
+				<div class="setting-row">
+					<span class="setting-label">Monitor</span>
+					<div class="spacer"/>
+					<button id="set_monitor" class="ghost setting-value">
+						<span id="set_monitor_value">Game default</span>
+					</button>
+				</div>
+				<div class="setting-row">
+					<span class="setting-label">Window</span>
+					<div class="spacer"/>
+					<button id="set_fullscreen" class="ghost setting-value">
+						<span id="set_fullscreen_value">Game default</span>
+					</button>
+				</div>
+				<div class="setting-row">
+					<span class="setting-label">Frame rate cap</span>
+					<div class="spacer"/>
+					<button id="set_vsync" class="ghost setting-value">
+						<span id="set_vsync_value">Game default</span>
+					</button>
+				</div>
+				<p id="settings_note" class="footer">
+					Saved as you change them. They apply the next time you press Play.
+				</p>
+				<div class="actions">
+					<button id="settings_back" class="primary">Back</button>
+				</div>
+			</div>
+
+			<!-- About. The licence obligation itself is discharged by the NOTICE
+			     file in this folder; this screen exists so a player who never
+			     opens a text editor still sees who the work belongs to. -->
+			<div class="panel panel-about">
+				<p class="subtitle">
+					A native port of the Xbox 360 release, built by static recompilation.
+					It contains no game content: everything it plays came from the disc
+					image you supplied.
+				</p>
+				<p class="subtitle">
+					Not affiliated with, endorsed by, or connected to Activision,
+					Neversoft, Tony Hawk, or Microsoft. All trademarks belong to their
+					respective owners.
+				</p>
+				<p class="footer">
+					Built on ReXGlue (BSD-3-Clause, with Xenia) and uses FFmpeg
+					(LGPL-2.1), RmlUi (MIT), SDL3 and SDL3_image (Zlib), FreeType (FTL)
+					and Noto Sans (OFL-1.1). Full texts are in the NOTICE file beside
+					this program.
+				</p>
+				<div class="actions">
+					<button id="about_back" class="primary">Back</button>
+				</div>
+			</div>
+
+			<div class="panel panel-debris actions">
+				<button id="reclaim" class="primary">Free it and continue</button>
+			</div>
+
+			<div class="panel panel-blocked actions">
+				<button id="stop" class="primary">Stop the running copy</button>
+			</div>
+
+			<div class="panel panel-progress">
+				<p class="subtitle">Starting…</p>
+			</div>
+
+			<p class="footer">
+				This port contains no game content and will never download any.
+				Your disc is read, never modified, and never sent anywhere.
+			</p>
+		</div>
+	</main>
+</body>
+</rml>

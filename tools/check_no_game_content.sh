@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Refuse to ship anything that came off the disc.
+#
+# Checks the file listing, not the ignore rules. There is no allowlist.
+
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$HERE"
+
+fail=0
+report() {
+  printf '\n!! %s\n' "$1"; shift
+  printf '   %s\n' "$@"
+  fail=1
+}
+
+mapfile -t tracked < <(git ls-files 2>/dev/null)
+if [ "${#tracked[@]}" -eq 0 ]; then
+  mapfile -t tracked < <(find . -type f -not -path './.git/*' -not -path './build/*' | sed 's|^\./||')
+fi
+
+check_glob() {
+  local pattern="$1" why="$2"
+  local -a hits=()
+  for f in "${tracked[@]}"; do [[ "$f" == $pattern ]] && hits+=("$f"); done
+  [ "${#hits[@]}" -gt 0 ] && report "$why" "${hits[@]}"
+}
+
+echo "== checking ${#tracked[@]} tracked files =="
+
+check_glob '*.xex'      'a game executable is in the tree'
+check_glob '*.xzp'      'a disc asset container is in the tree'
+check_glob '*.pak'      'a disc asset container is in the tree'
+check_glob '*.bik'      'disc video is in the tree'
+check_glob '*.bik.xen'  'disc video is in the tree'
+check_glob '*.xma'      'disc audio is in the tree'
+check_glob '*.fsb'      'disc audio is in the tree'
+check_glob '*.iso'      'a disc image is in the tree'
+check_glob '*.img'      'a disc image is in the tree'
+check_glob 'DATA/*'     'the disc data directory is in the tree'
+check_glob '*/DATA/*'   'the disc data directory is in the tree'
+
+# The recompiler's output is a translation of the publisher's machine code.
+check_glob '*thps_p8_recomp.*.cpp' 'generated translation units are in the tree'
+check_glob '*/generated/*'         'recompiler output is in the tree'
+
+# Backstop: every legitimate file here is source, config or a font.
+big=()
+for f in "${tracked[@]}"; do
+  [ -f "$f" ] || continue
+  size=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
+  [ "$size" -gt $((8 * 1024 * 1024)) ] && big+=("$f ($((size / 1024 / 1024)) MB)")
+done
+[ "${#big[@]}" -gt 0 ] && report 'a file larger than 8 MB is in the tree' "${big[@]}"
+
+if [ "$fail" -ne 0 ]; then
+  echo
+  echo "REFUSING: the tree contains something that must not be published."
+  exit 1
+fi
+
+echo "clean"

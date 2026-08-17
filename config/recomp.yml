@@ -1,0 +1,683 @@
+# Static-recompilation index for Tony Hawk's Project 8 (Xbox 360).
+#
+# Schema:   registry/schemas/recomp.schema.json
+# Workflow: docs/workflows/static-recompilation.md
+# Platform: platforms/xbox360/
+#
+# Anything not yet decided or measured says TODO explicitly and carries an
+# `unverified` evidence tier. Do not fill a TODO with a guess - a wrong address
+# here is worse than an absent one.
+
+game:
+  slug: tony-hawks-project-8
+  title: "Tony Hawk's Project 8"
+  release_year: 2006
+  developer: Neversoft Entertainment
+  publisher: Activision
+  engine: neversoft-nxcommon
+
+platform: xbox360
+capability: static-recompilation
+status: intake
+
+goal: >-
+  Translate the retail Xbox 360 title executable to host source ahead of time
+  and run it against a project-authored host runtime. There is no byte-match
+  target and no matching percentage; success is measured by boot and render.
+
+source_material_policy: >-
+  The disc image is the owner's own dump of their own disc. It, the extracted
+  default.xex, and every decrypted or decompressed intermediate stay under the
+  ignored sources/install-media/ tree. Never committed, never redistributed.
+
+generated_output_policy: >-
+  recomp/generated/ is a mechanical translation of a copyrighted binary and is
+  treated exactly like an extracted binary: gitignored, never committed, always
+  regenerable from the committed config plus the owner's own dump.
+
+# ---------------------------------------------------------------------------
+# Toolchain
+# ---------------------------------------------------------------------------
+
+toolchain:
+  id: rexglue-sdk
+  status: selected
+  recompiler: rexglue-sdk
+  upstream: https://github.com/rexglue/rexglue-sdk
+  commit: e8ce24fa73cd7c1ede80262c06f34893b7963dbe
+  license: BSD-3-Clause
+  consumption: unforked-external-clone
+  local_clone: /home/theo/src/extern/game-preservation/rexglue-sdk
+  acquisition: prebuilt-release-first
+  decision_record: docs/decisions/0003-thps8-recompilation-toolchain.md
+  host_compiler: clang
+  host_compiler_min_version: "18"
+  build_system: cmake+ninja
+  notes:
+    - >-
+      Settled by ADR 0003. Read it before changing this block; the choice, the
+      evidence against it, and the named triggers that would reverse it are all
+      recorded there rather than here.
+    - >-
+      Selected because three risks this workspace marks toolchain-blocking - R1
+      XMA/MMIO, R2 exceptions, R5 the graphics integration strategy - already
+      have implementations in the BSD-3-Clause tree at the pinned commit. The
+      emulated graphics path in particular is the one thing that cannot be
+      acquired incrementally.
+    - >-
+      Consumed UNFORKED as a pinned external clone, in the same relationship
+      external/mgs_reversing already has. Never vendored into this tree: the
+      SDK commits platform decryption constants as source data, and vendoring
+      would land them in this repository's history. Keeping it external makes
+      that rule structural rather than a thing to remember.
+    - >-
+      Acquisition order is prebuilt release first, from-source second. That is
+      a disk decision, not a convenience - the from-source build pulls 22
+      submodules including FFmpeg, DXC, glslang and SPIRV-Tools onto a
+      filesystem measured at 93% used. See notes/risks.md R6.
+    - >-
+      Pinning the commit is mandatory, not hygiene. The SDK's configuration
+      schema has already changed incompatibly once, from a flat single-binary
+      form to a manifest-plus-config split, and the abandoned attempt at this
+      title is stranded on the old form.
+    - >-
+      The SDK's transitive dependency tree is now this project's licence
+      problem. See docs/policies/dependency-licences.md; FFmpeg is the largest
+      open question in it and it is unresolved.
+    - MSVC and Apple Clang are unsupported. Clang only.
+
+  rejected_alternatives:
+    - id: xenonrecomp
+      status: rejected
+      upstream: https://github.com/hedge-dev/XenonRecomp
+      commit: ddd128bcca99fe8bfbb99bea583c972351fa6ace
+      license: MIT
+      retained_as: reference
+      reason: >-
+        Rejected on effort, not on quality. The cleanest provenance in the
+        surveyed corpus and the smallest dependency surface - 6 submodules
+        against 22 - but it ships a container loader and a PowerPC-to-C++
+        translator and no host runtime. The reference runtime built on it,
+        hedge-dev/UnleashedRecomp at cf829a9eca8fb680fba4b0409ddeb6ca92f22e3c,
+        is GPL-3.0 and therefore study-only under this repository's licence
+        table, so kernel, GPU and audio would all be authored from scratch
+        against a reference nothing may be derived from. Its own README states
+        MMIO is unimplemented and exceptions unsupported, which is where R1 and
+        R2 came from; choosing it means owning both.
+      still_used_for: >-
+        Kept as a reference and registered as scope external, status reference.
+        It remains the MIT source for the generated-code ABI and the
+        boundary-analysis failure taxonomy, and it is the second opinion if the
+        SDK's config schema churns again. Not a dependency, not dropped.
+      local_clone_state: >-
+        Depth-1; all six third-party submodules are empty and would need
+        fetching before it could build. libmspack/LZX is dead weight for this
+        title because compression is BASIC.
+    - id: hybrid-xenia-assisted
+      status: rejected
+      reason: >-
+        Framing the work as XenonRecomp for codegen plus an emulator-derived
+        GPU and kernel layer underneath is reimplementing the chosen dependency
+        by hand, with worse provenance and no upstream - the first half of that
+        plan IS the SDK.
+      still_used_for: >-
+        Retained as a technique. Running the title under an emulator and
+        comparing against the port for the same input is a legitimate oracle
+        for a divergence hunt, and it requires no code from the emulator.
+
+# ---------------------------------------------------------------------------
+# Target
+# ---------------------------------------------------------------------------
+
+target:
+  id: thps-p8-default-xex-retail
+  role: guest-executable
+  storage: local-only
+  container: xex2
+  path: ../sources/install-media/derived/default.xex
+  source_media: ../sources/install-media/local/thps-p8.iso
+  hash_algorithm: sha256
+  hash: cfc732340e55defda400e25f03231aa9bb65fd9545b618212f69a4952384a5dd
+  size: "8237056"
+
+  # Two copies of the container exist locally and hash identically:
+  # derived/default.xex (path above, authoritative) and derived/disc/default.xex
+  # (a by-product of the full disc extraction). Tools should name the first.
+  # The decrypted flat image caches to derived/default.pe.bin, also ignored,
+  # regenerable in about 7 seconds. Everything under sources/install-media/ is
+  # gitignored and none of it is ever committed.
+
+  identity:
+    title_id: "0x415607DD"
+    media_id: "0x2CB96AE4"
+    region: region-free
+    region_raw: "0xFFFFFFFF"
+    build_timestamp: "2006-09-23T03:06:03Z"
+    original_name: skate8_Final.exe
+    title_update: none-present-on-disc
+    disc: 1 of 1
+    version: "1"
+    base_version: "1"
+    xdk_version: 2.0.3424.0
+
+  image:
+    image_base: "0x82000000"
+    image_size: "0x00A80000"
+    entry_point: "0x823AC158"
+
+    # code_base/code_size are the COMBINED span across every section carrying
+    # IMAGE_SCN_CNT_CODE. This image has two of them. A .text-only size was
+    # recorded here previously and it is wrong as a denominator: 95 unwind
+    # entries begin past the end of .text and every address in BINK reports as
+    # out of range. Measured with binfmt.pe.PeImage.code_span.
+    code_base: "0x82090000"
+    code_size: "0x0063D284"
+    code_span_end: "0x826CD284"
+    code_section_count: "2"
+
+    # The two spans mean different things and both are needed.
+    #   text_span  - the codegen input everyone actually recompiles.
+    #   code_span  - the coverage denominator; percentages divide by this.
+    # Recording only one of them is how the earlier error happened.
+    text_span:
+      base: "0x82090000"
+      size: "0x0062CA64"
+      end: "0x826BCA64"
+      note: >-
+        .text alone. 6474340 bytes, 19072 unwind entries. Correct as the
+        primary codegen input, wrong as a denominator.
+    code_span:
+      base: "0x82090000"
+      size: "0x0063D284"
+      end: "0x826CD284"
+      note: >-
+        .text plus 412 bytes of inter-section padding plus BINK
+        (0x826BCC00..0x826CD284, 0x10684 bytes). 6541956 bytes, all 19167
+        unwind entries. Use this as the coverage denominator.
+
+    unwind_entry_count: "19167"
+    unwind_entries_in_text: "19072"
+    unwind_entries_in_bink: "95"
+    unwind_exception_flag_count: "39"
+    unwind_covered_bytes: "6091544"
+    pe_sections: "11"
+    encryption: retail-aes-128-cbc
+    compression: basic
+    decrypted_sha256: c42cb78144c2ef40d97615279525f71c746ad647124f1293eb962711ee27fb0f
+    decrypted_size: "11010048"
+
+  code_sections:
+    - name: .text
+      virtual_address: "0x82090000"
+      virtual_size: "0x0062CA64"
+      end: "0x826BCA64"
+      characteristics: "0x60000020"
+      role: guest code, including the statically linked D3D9-X, XAudio and C++ runtime
+    - name: BINK
+      virtual_address: "0x826BCC00"
+      virtual_size: "0x00010684"
+      end: "0x826CD284"
+      characteristics: "0x60000020"
+      role: >-
+        RAD Bink video decoder, linked as its own code section. 95 unwind
+        entries, 0 exception-flagged, 0 ABI helper patterns. Small but it is
+        real executable code on the boot path if any Bink plays before the
+        title screen.
+
+  notes:
+    - Facts and evidence tiers are in facts/xex-facts.md.
+    - Unwind table census, including the exception numbers, is in facts/pdata-census.md.
+    - >-
+      Every address this project has learned lives in
+      analysis/address-ledger.tsv. address_ledger below carries only the subset
+      promoted to configuration.
+    - >-
+      base_version equals version, so the disc build carries no baked-in title
+      update. Settled as a decision - see decisions.target-build below - rather
+      than left as an open question, because merging a .xexp rebuilds .text and
+      invalidates every address recorded anywhere in this workspace.
+    - >-
+      Compression is BASIC, so decryption plus zero-run expansion yields the
+      flat PE directly. No LZX decoder is on the critical path for this title.
+    - >-
+      .pdata is present and populated with 19167 entries. A missing .pdata
+      crashes at least one candidate analyser outright; that hazard does not
+      apply here.
+
+# ---------------------------------------------------------------------------
+# Decisions
+# ---------------------------------------------------------------------------
+#
+# Settled questions. Each carries a done-when and the trigger that reopens it,
+# so a later session recognises the trigger instead of relitigating the choice.
+# Prose belongs in notes/ and docs/decisions/; this block is the index.
+
+decisions:
+  - id: target-build
+    question: >-
+      Which build of the executable is the port's target - the pressed disc
+      build, or a title update merged over it?
+    decision: >-
+      Target the pressed disc build. No title update is merged, now or later,
+      unless the trigger below fires.
+    status: settled
+    date: "2026-07-30"
+    evidence: observed
+    rationale: >-
+      Measured: base_version 0x00000001 equals version 0x00000001 in the
+      EXECUTION_INFO optional header, and a full walk of all 5127 files on the
+      disc finds exactly one .xex and zero .xexp anywhere on it. The
+      disc build is therefore self-contained and is what the owner's own dump
+      actually contains. Merging a .xexp rebuilds .text - it patches and
+      relinks code, so function addresses move. Every one of the 19167 unwind
+      boundaries, all eight ABI anchor addresses, the entry point and every row
+      of analysis/address-ledger.tsv would be invalidated at once, and there is
+      no cheap way to tell a stale address from a wrong one afterwards. The
+      cost of that grows with every address recorded, which is exactly why it
+      is settled now rather than when it becomes expensive.
+    done_when:
+      - target.identity.title_update reads none-present-on-disc.
+      - >-
+        Every address artifact in this workspace states the build it describes,
+        so a future merge is detectable rather than silent. Currently satisfied
+        by target.hash plus target.image.decrypted_sha256, which
+        analysis/address-ledger.tsv and facts/pdata-census.md both cite.
+      - >-
+        No recompiler config input names a .xexp or a merged image. Enforced by
+        tools/recomp-lint path checks once config/ is populated.
+    reopen_trigger: >-
+      A downloadable title update for title ID 0x415607DD is shown to fix a
+      defect that blocks boot or render AND that cannot be fixed in the host
+      runtime or a patch. Availability alone is not the trigger; a blocking
+      defect is.
+    if_reopened: >-
+      Treat the merged image as a NEW target with its own id, hash and address
+      ledger. Do not edit the existing addresses in place. Keep the disc-build
+      ledger; a diff between the two is the only way to learn what the update
+      moved.
+    open_sub_question: >-
+      Whether a downloadable .xexp exists at all is unknown and deliberately
+      unanswered. It does not gate anything under this decision, and answering
+      it needs network access to a service this repository does not use.
+
+  - id: coverage-denominator
+    question: >-
+      Do coverage percentages divide by .text or by the combined code span?
+    decision: >-
+      By the combined code span across every IMAGE_SCN_CNT_CODE section,
+      0x82090000..0x826CD284, 6541956 bytes.
+    status: settled
+    date: "2026-07-30"
+    evidence: observed
+    rationale: >-
+      Measured: the image has two code sections and 95 of the 19167 unwind
+      entries begin in the second. A .text-only denominator silently drops
+      them and reports every BINK address as out of range. Both spans are
+      recorded under target.image because they answer different questions.
+    done_when:
+      - target.image.code_size is the combined span. Done.
+      - >-
+        tools/recomp-lint reports no CODE-SPAN-UNVERIFIED when run with
+        --image, and the span it measures equals the declared one.
+    reopen_trigger: >-
+      A future build of this title has a different code section set. Re-measure
+      rather than assume; the section table is the authority, not this entry.
+
+# ---------------------------------------------------------------------------
+# Additional guest modules
+# ---------------------------------------------------------------------------
+#
+# Empty because no additional guest executable has been identified. The disc
+# root holds exactly three entries - $SYSTEMUPDATE, DATA, and default.xex - and
+# the only other executable payload is a console system update, which is
+# firmware rather than game code and is out of scope.
+#
+# Not yet ruled out: a middleware module buried inside the DATA tree. Comparable
+# titles ship one. Answerable from the disc inventory; tracked in ../NEXT.md.
+
+modules: []
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+
+config:
+  dialect: rexglue
+  recompiler_config: TODO
+  switch_tables: TODO
+  generated_output: generated/
+  notes:
+    - >-
+      Dialect follows from the toolchain decision, ADR 0003. The two dialects
+      put their keys in mutually exclusive places, so this is not cosmetic:
+      tools/recomp-lint reports a shape mismatch as DIALECT-UNKNOWN rather than
+      producing a run full of unknown-key warnings that exits 0.
+    - >-
+      The config files themselves are still TODO. Authoring them is blocked on
+      the prebuilt-release probe in ../NEXT.md - the SDK's config schema has
+      changed incompatibly once already, so the shape should come from the
+      pinned build rather than from a surveyed example.
+    - >-
+      Every forced function entry must carry its discovery method and evidence
+      tier. The full record is analysis/address-ledger.tsv; address_ledger
+      below carries only what has been promoted to configuration. An address
+      list without provenance is not reviewable.
+
+# ---------------------------------------------------------------------------
+# ABI anchors
+# ---------------------------------------------------------------------------
+#
+# Located by byte-pattern search over the whole decrypted image, not just the
+# code sections, so a data collision would have shown as a second hit. Every
+# pattern matched exactly once, 4-byte aligned, inside .text. No pattern
+# matched anywhere in BINK.
+#
+# Independently cross-derived from the .pdata unwind table: six of the eight
+# addresses are unwind BeginAddresses whose recorded byte length equals the
+# chain size computed from the signature arithmetic. Two derivations that share
+# no input agreeing on all six is the strongest evidence available here.
+#
+# The two _64 chains are NOT separate unwind entries - the table describes each
+# save/restore group as one function spanning both chains - so the unwind table
+# alone cannot supply them. Recorded because the recompiler needs them as
+# separate entry points.
+#
+# The chosen toolchain detects these by signature rather than requiring them by
+# hand. They stay recorded here regardless: they are facts about the image, and
+# an anchor the detector gets wrong is otherwise undetectable. See
+# platforms/xbox360/signatures/README.md for the three-step trust test.
+
+abi_anchors:
+  - name: __savegprlr_14
+    address: "0x8262BC00"
+    signature: "f9 c1 ff 68"
+    size: "0x50"
+    evidence: observed
+    source: local pattern search against our own dump
+    unwind_entry: >-
+      .pdata BeginAddress 0x8262BC00, 80 bytes - equals the chain size exactly.
+  - name: __restgprlr_14
+    address: "0x8262BC50"
+    signature: "e9 c1 ff 68"
+    size: "0x54"
+    evidence: observed
+    source: local pattern search against our own dump
+    unwind_entry: >-
+      .pdata BeginAddress 0x8262BC50, 84 bytes - equals the chain size exactly.
+      Carries ExceptionFlag with ThirtyTwoBit clear and PrologLength equal to
+      FunctionLength: that is the save/restore chain special encoding, not an
+      exception handler. See facts/pdata-census.md.
+  - name: __savefpr_14
+    address: "0x8262C780"
+    signature: "d9 cc ff 70"
+    size: "0x4C"
+    evidence: observed
+    source: local pattern search against our own dump
+    unwind_entry: >-
+      .pdata BeginAddress 0x8262C780, 76 bytes - equals the chain size exactly.
+  - name: __restfpr_14
+    address: "0x8262C7CC"
+    signature: "c9 cc ff 70"
+    size: "0x4C"
+    evidence: observed
+    source: local pattern search against our own dump
+    unwind_entry: >-
+      .pdata BeginAddress 0x8262C7CC, 76 bytes - equals the chain size exactly.
+      Chain special encoding, as __restgprlr_14.
+  - name: __savevmx_14
+    address: "0x826315A0"
+    signature: "39 60 fe e0 7d cb 61 ce"
+    size: "0x94"
+    evidence: observed
+    source: local pattern search against our own dump
+    unwind_entry: >-
+      .pdata BeginAddress 0x826315A0, 664 bytes = 0x94 + 0x204, so the entry
+      spans this chain and __savevmx_64 together as one function.
+  - name: __restvmx_14
+    address: "0x82631838"
+    signature: "39 60 fe e0 7d cb 60 ce"
+    size: "0x94"
+    evidence: observed
+    source: local pattern search against our own dump
+    unwind_entry: >-
+      .pdata BeginAddress 0x82631838, 664 bytes = 0x94 + 0x204, spanning this
+      chain and __restvmx_64. Chain special encoding, as __restgprlr_14.
+  - name: __savevmx_64
+    address: "0x82631634"
+    signature: "39 60 fc 00 10 0b 61 cb"
+    size: "0x204"
+    evidence: observed
+    source: local pattern search against our own dump
+    unwind_entry: >-
+      Not a .pdata BeginAddress. Lies inside the 664-byte entry at 0x826315A0.
+  - name: __restvmx_64
+    address: "0x826318CC"
+    signature: "39 60 fc 00 10 0b 60 cb"
+    size: "0x204"
+    evidence: observed
+    source: local pattern search against our own dump
+    unwind_entry: >-
+      Not a .pdata BeginAddress. Lies inside the 664-byte entry at 0x82631838.
+  - name: setjmp
+    address: "0x82630550"
+    evidence: third-party-claim
+    source: facts/upstream-p8-config-claims.md
+    corroboration: >-
+      The ADDRESS is a real .pdata BeginAddress with a 276-byte function, so
+      the boundary is observed locally. The NAME is still only claimed. This is
+      the one upstream claim of 24 that lands on an unwind entry. Tier stays
+      third-party-claim because a boundary is not an identity.
+  - name: longjmp
+    address: "0x826307A0"
+    evidence: third-party-claim
+    source: facts/upstream-p8-config-claims.md
+    corroboration: >-
+      Not a .pdata BeginAddress. Falls inside the unwind gap
+      0x82630794..0x82630890 at +12, so the table describes no function
+      starting there. Neither supported nor contradicted. Recorded route to
+      re-derive: find callers of RtlUnwind; setjmp typically sits adjacent.
+
+# ---------------------------------------------------------------------------
+# Address ledger
+# ---------------------------------------------------------------------------
+#
+# THE FULL LEDGER IS analysis/address-ledger.tsv. This block is the subset that
+# has been promoted to configuration: forced function boundaries the recompiler
+# will actually be told about. An address is promoted when it carries
+# evidence: observed and a size.
+#
+# Empty, and that is the honest state. The 22 addresses that were listed here
+# were third-party claims carried as leads, and the linter is right that a lead
+# is not configuration. They now live in analysis/address-ledger.tsv with their
+# triage result, which is the artifact the abandoned prior attempt never had.
+#
+# Triage performed 2026-07-30 against our own 19167-entry unwind table:
+#   0 of 22 upstream forced-function addresses is a .pdata BeginAddress;
+#   22 of 22 fall inside .pdata gaps - the 6.885% of the code span the unwind
+#     table does not describe;
+#   1 of 22 (0x8260D7A0) falls exactly at a gap start, the shape a real
+#     boundary has; the other 21 fall mid-gap.
+# That is consistent with a genuine forced-function list from this build - such
+# a list exists precisely where the unwind table is silent - but it is not
+# confirmation, because a list from a different build of the same title would
+# land in gaps too. Tier unchanged: third-party-claim. Status: lead.
+#
+# Do not bulk-promote. Each address needs a locally established boundary and a
+# recorded discovery method, per notes/risks.md R10.
+
+address_ledger: []
+
+# ---------------------------------------------------------------------------
+# Kernel HLE surface
+# ---------------------------------------------------------------------------
+
+hle:
+  status: sufficient
+  import_modules:
+    - xam.xex
+    - xboxkrnl.exe
+  import_count: "244"
+  import_count_meaning: distinct-ordinals
+  function_thunk_count: "234"
+  data_only_import_count: "10"
+  notes:
+    - >-
+      Only two import libraries. 478 thunk records across 244 distinct ordinals
+      (87 xam, 157 kernel). A modest HLE surface compared with later titles.
+    - >-
+      import_count 244 is the DISTINCT-ORDINAL count and is not the number of
+      stubs to write. The kernel split is asymmetric: xboxkrnl.exe has 157
+      variable slots but only 147 function thunks, so 10 kernel imports are
+      data-only. The HLE function-stub surface is 87 + 147 = 234.
+    - >-
+      Direct3D 9-X, XAudio, XGRAPHICS and the C++ runtime are STATICALLY LINKED
+      into the guest binary, not imported. This is the defining structural fact
+      for the port: the renderer is guest code, not an API boundary, so it
+      cannot be shimmed.
+    - >-
+      The full 15-entry XMA hardware decoder context API is imported while
+      recompiler MMIO support is unfinished upstream. Highest-severity unknown;
+      see notes/risks.md R1.
+    - >-
+      Exception-related kernel imports are present and the C++ standard library
+      is statically linked. The unwind-table census in facts/pdata-census.md
+      narrows this considerably - 36 of 19167 functions carry an exception
+      handler, all inside two compiler-runtime clusters totalling 1.196% of the
+      code span, none in game code - but it does not close it, because the flag
+      marks a function that HAS a handler, not one that throws. See
+      notes/risks.md R2.
+
+# ---------------------------------------------------------------------------
+# Replacement boundaries
+# ---------------------------------------------------------------------------
+
+boundaries:
+  renderer: >-
+    RESOLVED: the SDK's emulated GPU command stream (Vulkan backend), per ADR
+    0003, confirmed working end to end in-game. Hooking the statically linked
+    guest D3D9-X by address remains the named reversal trigger only.
+  audio: >-
+    RESOLVED: the SDK decodes XMA above the register level and this title's
+    XMA MMIO accesses are reached at runtime - audio plays. FMOD-on-XAudio as
+    predicted.
+  input: >-
+    RESOLVED: SDK SDL gamepad driver (hotplug, default-on) plus mnk keyboard,
+    merged; app adds an in-process scripted-input driver for testing
+    (build/src/rexglue_script_input.h, --input_json/--input_json_file).
+  filesystem: >-
+    RESOLVED: SDK VFS serves the extracted disc via --game_data_root; saves
+    land in the real Xbox 360 content layout under XDG data.
+  online: >-
+    Out of scope. 32 NetDll_ Winsock/XNet entry points are imported; the
+    startup XLIVEBASE message is stubbed non-fatally.
+
+# ---------------------------------------------------------------------------
+# Patches
+# ---------------------------------------------------------------------------
+
+patches: []
+
+# ---------------------------------------------------------------------------
+# Gates
+# ---------------------------------------------------------------------------
+
+gates:
+  - id: intake
+    status: passed
+    evidence: ../docs/provenance/thps-p8-disc-image-intake.md
+  - id: target-identified
+    status: passed
+    evidence: facts/xex-facts.md
+  - id: abi-anchors-located
+    status: passed
+    evidence: >-
+      facts/xex-facts.md for the pattern search; abi_anchors above for the
+      independent unwind-table cross-derivation of six of the eight.
+  - id: code-span-measured
+    status: passed
+    evidence: >-
+      facts/pdata-census.md. Two code sections, combined span
+      0x82090000..0x826CD284. Supersedes the .text-only code_size previously
+      recorded here.
+  - id: address-leads-triaged
+    status: passed
+    evidence: >-
+      analysis/address-ledger.tsv. All 24 upstream claims cross-checked against
+      the local 19167-entry unwind table: 1 lands on a BeginAddress (the
+      claimed setjmp), 23 fall in unwind gaps. None promoted; the gate is that
+      the check was performed and recorded, not that the addresses were
+      accepted.
+  - id: exception-question-resolved
+    status: passed
+    evidence: >-
+      Resolved in practice: the port reaches in-game with
+      generate_exception_handlers off. facts/pdata-census.md bounds the
+      handler set to 36 compiler-runtime functions, none in game code.
+  - id: mmio-xma-question-resolved
+    status: passed
+    evidence: >-
+      XMA MMIO registers are reached at runtime and audio plays through the
+      SDK's above-register decoder (in-game runs, 2026-07-30).
+  - id: toolchain-selected
+    status: passed
+    evidence: docs/decisions/0003-thps8-recompilation-toolchain.md
+  - id: toolchain-acquired
+    status: passed
+    evidence: >-
+      Prebuilt v0.8.0 linux-amd64 installed to a versioned prefix outside the
+      repo, builds and runs against clang 22.1.6 and this Vulkan stack.
+  - id: config-authored
+    status: passed
+    evidence: >-
+      config/thps_p8_manifest.toml, 178 forced starts each with a discovery
+      method; register-localization perf flags staged behind a bisect.
+  - id: first-recompilation
+    status: passed
+    evidence: 25,604 functions, 3.88M lines / 56 TUs, ~11 s codegen.
+  - id: first-link
+    status: passed
+    evidence: 33 MB host ELF; committed wiring in build/.
+  - id: renderer-strategy-selected
+    status: passed
+    evidence: >-
+      Emulated command stream from the SDK (ADR 0003), confirmed working end
+      to end in-game; guest-hook path remains the named reversal trigger.
+  - id: boot-to-title-screen
+    status: passed
+    evidence: Boots through FMVs to title screen and menus from the owner's dump.
+  - id: render-gameplay
+    status: passed
+    evidence: >-
+      Real-time 3D gameplay (Free Skate) with audio. Performance is the open
+      item: recompiled-CPU bound, ~24 fps uncapped in gameplay - see NEXT.md.
+
+# ---------------------------------------------------------------------------
+
+notes:
+  risks: notes/risks.md
+  facts: facts/xex-facts.md
+  pdata_census: facts/pdata-census.md
+  address_ledger_full: analysis/address-ledger.tsv
+  coverage_arithmetic: analysis/README.md
+  third_party_claims: facts/upstream-p8-config-claims.md
+  toolchain_decision: docs/decisions/0003-thps8-recompilation-toolchain.md
+  provenance: ../docs/provenance/thps-p8-disc-image-intake.md
+  platform_reference: platforms/xbox360/
+  progress: ../PROGRESS.md
+  handoff: ../NEXT.md
+  control_flow_census: >-
+    Counted 4-byte-aligned within each code section. .text: 685 mtctr r0, 1235
+    bctr. BINK: 5 mtctr r0, 7 bctr. Combined: 690 and 1242. Jump-table recovery
+    keys off exactly that pair, so these counts bound the analysis workload.
+    Any restated instruction count must name its section set and state that it
+    was taken on 4-byte boundaries, or it is not comparable - a raw byte search
+    over the whole image inflates the nop count 7.5x.
+  unwind_census: >-
+    19167 entries; 19072 begin in .text, 95 in BINK, 0 outside a code section.
+    39 carry ExceptionFlag, of which 3 are the save/restore chain special
+    encoding, leaving 36 real handlers. Coverage 6091544 of 6541956 bytes =
+    93.115% of the combined code span. Full breakdown in facts/pdata-census.md.
+  external_reference_policy: >-
+    Cite upstream URL plus commit hash as evidence. Never copy code out of the
+    reference clones. Two of the surveyed reference repositories ship no
+    license at all, so nothing may be derived from them beyond facts.

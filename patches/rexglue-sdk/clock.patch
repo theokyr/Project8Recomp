@@ -1,0 +1,76 @@
+diff --git a/src/core/clock.cpp b/src/core/clock.cpp
+index ae72b7a..81f0e74 100644
+--- a/src/core/clock.cpp
++++ b/src/core/clock.cpp
+@@ -9,6 +9,7 @@
+  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
+  */
+ 
++#include <atomic>
+ #include <algorithm>
+ #include <limits>
+ #include <mutex>
+@@ -42,6 +43,34 @@ uint64_t last_host_tick_count_ = Clock::QueryHostTickCount();
+ // Mutex to ensure last_host_tick_count_ and last_guest_tick_count_ are in sync
+ std::mutex tick_mutex_;
+ 
++// Lock-free linear guest-clock scale for the QueryGuestTickCount fast path.
++// guest = base_guest + ((host - base_host) * mul128) >> 64. Writers hold
++// tick_mutex_ and flip the sequence odd->even around updates (seqlock).
++struct GuestScaleState {
++  uint64_t base_host;
++  uint64_t base_guest;
++  unsigned __int128 mul;
++};
++std::atomic<uint32_t> guest_scale_seq_{0};
++GuestScaleState guest_scale_{};
++
++// Callers must hold tick_mutex_.
++void PublishGuestScale() {
++  uint64_t host_now = Clock::QueryHostTickCount();
++  uint64_t host_delta = host_now > last_host_tick_count_ ? host_now - last_host_tick_count_ : 0;
++  last_guest_tick_count_ += host_delta * guest_tick_ratio_.first / guest_tick_ratio_.second;
++  last_host_tick_count_ = host_now;
++  uint32_t s = guest_scale_seq_.load(std::memory_order_relaxed);
++  guest_scale_seq_.store(s + 1, std::memory_order_release);
++  guest_scale_.base_host = host_now;
++  guest_scale_.base_guest = last_guest_tick_count_;
++  guest_scale_.mul = guest_tick_ratio_.second
++                         ? (static_cast<unsigned __int128>(guest_tick_ratio_.first) << 64) /
++                               guest_tick_ratio_.second
++                         : 0;
++  guest_scale_seq_.store(s + 2, std::memory_order_release);
++}
++
+ void RecomputeGuestTickScalar() {
+   // Create a rational number with numerator (first) and denominator (second)
+   auto frac = std::make_pair(guest_tick_frequency_, Clock::QueryHostTickFrequency());
+@@ -59,6 +88,7 @@ void RecomputeGuestTickScalar() {
+ 
+   std::lock_guard<std::mutex> lock(tick_mutex_);
+   guest_tick_ratio_ = frac;
++  PublishGuestScale();
+ }
+ 
+ // Update the guest timer for all threads.
+@@ -156,8 +186,18 @@ void Clock::set_guest_system_time_base(uint64_t time_base) {
+ }
+ 
+ uint64_t Clock::QueryGuestTickCount() {
+-  auto guest_tick_count = UpdateGuestClock();
+-  return guest_tick_count;
++  // Fast path: no mutex, no division - the guest's own profiler hammers this
++  // (every recompiled mftb lands here). Falls back before first publish.
++  uint64_t host = QueryHostTickCount();
++  for (;;) {
++    uint32_t s = guest_scale_seq_.load(std::memory_order_acquire);
++    if (s == 0 || (s & 1)) break;
++    GuestScaleState sc = guest_scale_;
++    if (guest_scale_seq_.load(std::memory_order_acquire) != s) continue;
++    uint64_t dh = host > sc.base_host ? host - sc.base_host : 0;
++    return sc.base_guest + static_cast<uint64_t>((sc.mul * dh) >> 64);
++  }
++  return UpdateGuestClock();
+ }
+ 
+ uint64_t Clock::QueryGuestSystemTime() {

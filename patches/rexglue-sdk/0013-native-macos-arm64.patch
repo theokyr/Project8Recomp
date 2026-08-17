@@ -1,0 +1,1478 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 09ac897839907d8e3c1cba948e20b53322eaa98a..6708509e6a5922c386e5fbe3fcdd61f00fe7d4ba 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -63,10 +63,16 @@ if(UNIX AND NOT APPLE)
+         "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"
+     )
+     set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
++elseif(APPLE)
++    list(APPEND CMAKE_INSTALL_RPATH
++        "@loader_path"
++        "@loader_path/../${CMAKE_INSTALL_LIBDIR}"
++    )
++    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
+ endif()
+ 
+ # Enforce Clang18 compiler
+-if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
++if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(AppleClang|Clang)$")
+     message(FATAL_ERROR "ReXGlue requires Clang compiler. Please set CMAKE_CXX_COMPILER to clang++")
+ endif()
+ 
+@@ -120,6 +126,19 @@ if(WIN32)
+         message(FATAL_ERROR "Unsupported Windows architecture: ${CMAKE_SYSTEM_PROCESSOR}")
+     endif()
+     add_compile_definitions(REX_PLATFORM_WINDOWS=1)
++elseif(APPLE)
++    set(REX_APPLE_PROCESSOR "${CMAKE_SYSTEM_PROCESSOR}")
++    if(CMAKE_OSX_ARCHITECTURES AND NOT CMAKE_OSX_ARCHITECTURES MATCHES ";")
++        set(REX_APPLE_PROCESSOR "${CMAKE_OSX_ARCHITECTURES}")
++    endif()
++    if(REX_APPLE_PROCESSOR MATCHES "aarch64|arm64|ARM64")
++        set(REX_PLATFORM "macos-arm64")
++    elseif(REX_APPLE_PROCESSOR MATCHES "AMD64|x86_64")
++        set(REX_PLATFORM "macos-amd64")
++    else()
++        message(FATAL_ERROR "Unsupported macOS architecture: ${REX_APPLE_PROCESSOR}")
++    endif()
++    add_compile_definitions(REX_PLATFORM_MAC=1)
+ elseif(UNIX AND NOT APPLE)
+     if(CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64|x86_64")
+         set(REX_PLATFORM "linux-amd64")
+@@ -130,7 +149,7 @@ elseif(UNIX AND NOT APPLE)
+     endif()
+     add_compile_definitions(REX_PLATFORM_LINUX=1)
+ else()
+-    message(FATAL_ERROR "Unsupported platform. ReXGlue supports Windows and Linux only.")
++    message(FATAL_ERROR "Unsupported platform. ReXGlue supports Windows, Linux, and macOS only.")
+ endif()
+ 
+ # Build config as compile definition (multi-config generators don't know config at configure time)
+diff --git a/include/rex/chrono/chrono.h b/include/rex/chrono/chrono.h
+index 8761cffe15cd7770f44f844d0044abaee79fd238..124b2ac7b4729897c7411d97953d4f38cf50075b 100644
+--- a/include/rex/chrono/chrono.h
++++ b/include/rex/chrono/chrono.h
+@@ -116,6 +116,19 @@ using XSystemClock = detail::NtSystemClock<detail::Domain::Guest>;
+ 
+ namespace std::chrono {
+ 
++#if defined(_LIBCPP_VERSION)
++// libc++ does not currently provide the C++20 clock conversion customization
++// point implemented by libstdc++, so provide the standard-shaped subset used
++// by ReXGlue's custom clocks.
++template <typename DestinationClock, typename SourceClock>
++struct clock_time_conversion;
++
++template <typename DestinationClock, typename SourceClock, typename Duration>
++auto clock_cast(const std::chrono::time_point<SourceClock, Duration>& time) {
++  return clock_time_conversion<DestinationClock, SourceClock>{}(time);
++}
++#endif
++
+ template <>
+ struct clock_time_conversion<::rex::chrono::WinSystemClock, ::rex::chrono::XSystemClock> {
+   using WClock_ = ::rex::chrono::WinSystemClock;
+diff --git a/include/rex/graphics/pipeline/shader/spirv_translator.h b/include/rex/graphics/pipeline/shader/spirv_translator.h
+index c51ea546bf6fe8ff71bfc6c88a04a223e16ea8b7..6f24b378fb99284043b37cb35db3f92fcad1f0de 100644
+--- a/include/rex/graphics/pipeline/shader/spirv_translator.h
++++ b/include/rex/graphics/pipeline/shader/spirv_translator.h
+@@ -991,7 +991,7 @@ class SpirvShaderTranslator : public ShaderTranslator {
+   spv::Id main_memexport_allowed_;
+   // VS rectangle-list fallback only - uint.
+   spv::Id var_main_rectangle_guest_vertex_index_;
+-  // VS rectangle-list fallback only - gl_PerVertex[3].
++  // VS rectangle-list fallback only - plain local mirror of gl_PerVertex[3].
+   spv::Id var_main_rectangle_per_vertex_;
+   // VS rectangle-list fallback only - float4[3] for each used interpolator.
+   std::array<spv::Id, xenos::kMaxInterpolators> var_main_rectangle_interpolators_;
+diff --git a/include/rex/platform/dynlib.h b/include/rex/platform/dynlib.h
+index ff66c8fa40eafec6b0976022c67f06b1b6040f17..e3fc40dc997a643ffe437012616e3093dff43cee 100644
+--- a/include/rex/platform/dynlib.h
++++ b/include/rex/platform/dynlib.h
+@@ -65,6 +65,12 @@ inline constexpr const char* kVulkanLoader = "libvulkan.so.1";
+ inline constexpr const char* kRenderDoc = "librenderdoc.so";
+ inline constexpr const char* kSpirvToolsSdkPath = "bin/libSPIRV-Tools-shared.so";
+ 
++#elif REX_PLATFORM_MAC
++
++inline constexpr const char* kVulkanLoader = "libvulkan.1.dylib";
++inline constexpr const char* kRenderDoc = "librenderdoc.dylib";
++inline constexpr const char* kSpirvToolsSdkPath = "lib/libSPIRV-Tools-shared.dylib";
++
+ #else
+ #error No library names provided for the target platform.
+ #endif
+diff --git a/include/rex/system/xmemory.h b/include/rex/system/xmemory.h
+index 3c3969a18e3de6f22ae2c98284f5d8c5b3ec622a..357e90e1327f9bb0f06713c7f2ba0cfbc3a8e916 100644
+--- a/include/rex/system/xmemory.h
++++ b/include/rex/system/xmemory.h
+@@ -28,11 +28,11 @@ class ByteStream;
+ 
+ namespace rex::memory::detail {
+ 
+-/// Compensates for Windows 64KB allocation granularity on the 0xE0 physical heap.
+-/// The backing file maps the 0xE0 heap at a 0x1000-byte offset, but MapViewOfFileEx
+-/// rounds down to 64KB boundaries. Linux mmap handles 4KB offsets natively.
++/// Compensates when the host mapping granularity is larger than the 4 KiB
++/// offset of the 0xE0 physical heap. Windows and Apple Silicon both round the
++/// backing-file view down, while Linux can map the 4 KiB offset directly.
+ constexpr u32 PhysicalHostOffset([[maybe_unused]] u32 guest_addr) noexcept {
+-#if REX_PLATFORM_WIN32
++#if REX_PLATFORM_WIN32 || REX_PLATFORM_MAC
+   return (guest_addr >= 0xE0000000u) ? 0x1000u : 0u;
+ #else
+   return 0u;
+diff --git a/include/rex/thread/fiber.h b/include/rex/thread/fiber.h
+index 64e70a7c9bd37d6297107d259fb6ac5589d11010..aa0ce874393466c51484a11b508e1ec21578e536 100644
+--- a/include/rex/thread/fiber.h
++++ b/include/rex/thread/fiber.h
+@@ -14,6 +14,10 @@
+ #include <rex/platform.h>
+ #include <cstddef>
+ 
++#if REX_PLATFORM_MAC && !defined(_XOPEN_SOURCE)
++#define _XOPEN_SOURCE 700
++#endif
++
+ #if REX_PLATFORM_LINUX || REX_PLATFORM_MAC
+ #include <ucontext.h>
+ #include <cstdint>
+@@ -51,7 +55,7 @@ struct Fiber {
+ #if REX_PLATFORM_WIN32
+   void* handle_ = nullptr;
+   bool is_thread_fiber_ = false;
+-#elif REX_PLATFORM_LINUX
++#elif REX_PLATFORM_LINUX || REX_PLATFORM_MAC
+   ucontext_t context_{};
+   std::vector<uint8_t> stack_;
+   void (*entry_)(void*) = nullptr;
+diff --git a/include/rex/ui/surface.h b/include/rex/ui/surface.h
+index 34e1d656e72ee98daae942be7f2437e5b81c43a9..a5996cf013d5a9e3708900a979142b9293232db5 100644
+--- a/include/rex/ui/surface.h
++++ b/include/rex/ui/surface.h
+@@ -33,12 +33,15 @@ class Surface {
+     kTypeIndex_XcbWindow,
+     // Windows.
+     kTypeIndex_Win32Hwnd,
++    // SDL-managed platform window (currently used by macOS).
++    kTypeIndex_SdlWindow,
+   };
+   using TypeFlags = uint32_t;
+   enum : TypeFlags {
+     kTypeFlag_AndroidNativeWindow = TypeFlags(1) << kTypeIndex_AndroidNativeWindow,
+     kTypeFlag_XcbWindow = TypeFlags(1) << kTypeIndex_XcbWindow,
+     kTypeFlag_Win32Hwnd = TypeFlags(1) << kTypeIndex_Win32Hwnd,
++    kTypeFlag_SdlWindow = TypeFlags(1) << kTypeIndex_SdlWindow,
+   };
+ 
+   Surface(const Surface& surface) = delete;
+diff --git a/include/rex/ui/surface_sdl.h b/include/rex/ui/surface_sdl.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..f3262e25001d2c45351dee4136525e986b83f1c1
+--- /dev/null
++++ b/include/rex/ui/surface_sdl.h
+@@ -0,0 +1,34 @@
++#pragma once
++
++#include <SDL3/SDL_video.h>
++
++#include <rex/ui/surface.h>
++
++namespace rex::ui {
++
++class SdlWindowSurface final : public Surface {
++ public:
++  explicit SdlWindowSurface(SDL_Window* window) : window_(window) {}
++
++  TypeIndex GetType() const override { return kTypeIndex_SdlWindow; }
++  SDL_Window* window() const { return window_; }
++
++ protected:
++  bool GetSizeImpl(uint32_t& width_out, uint32_t& height_out) const override {
++    int width = 0;
++    int height = 0;
++    if (!window_ || !SDL_GetWindowSizeInPixels(window_, &width, &height)) {
++      width_out = 0;
++      height_out = 0;
++      return false;
++    }
++    width_out = static_cast<uint32_t>(width);
++    height_out = static_cast<uint32_t>(height);
++    return true;
++  }
++
++ private:
++  SDL_Window* window_;
++};
++
++}  // namespace rex::ui
+diff --git a/include/rex/ui/vulkan/api.h b/include/rex/ui/vulkan/api.h
+index 278e95503487e7ddc9af7b711f2008a5dd27357e..94ab7f297cdfa51a1d4dbec7bf1ee0a4a94cf80d 100644
+--- a/include/rex/ui/vulkan/api.h
++++ b/include/rex/ui/vulkan/api.h
+@@ -38,6 +38,12 @@
+ #endif
+ #endif
+ 
++#if REX_PLATFORM_MAC
++#ifndef VK_USE_PLATFORM_METAL_EXT
++#define VK_USE_PLATFORM_METAL_EXT
++#endif
++#endif
++
+ #if REX_PLATFORM_WIN32
+ #ifndef WIN32_LEAN_AND_MEAN
+ #define WIN32_LEAN_AND_MEAN
+diff --git a/include/rex/ui/vulkan/instance.h b/include/rex/ui/vulkan/instance.h
+index e67262943e1a4f9949ffe8a373fb90eed393e9cb..0d86a5ca81b05762c426b7d82b19f180269f2bff 100644
+--- a/include/rex/ui/vulkan/instance.h
++++ b/include/rex/ui/vulkan/instance.h
+@@ -91,6 +91,9 @@ class VulkanInstance {
+ #endif
+ #ifdef VK_USE_PLATFORM_WIN32_KHR
+     bool ext_KHR_win32_surface = false;  // #10
++#endif
++#ifdef VK_USE_PLATFORM_METAL_EXT
++    bool ext_EXT_metal_surface = false;  // #218
+ #endif
+     bool ext_1_1_KHR_get_physical_device_properties2 = false;  // #60
+     bool ext_EXT_debug_utils = false;                          // #129
+diff --git a/resources/templates/codegen/init_h.inja b/resources/templates/codegen/init_h.inja
+index 8449a0b21cb037b5da0c8ed1f7cbb2e87fb5d30e..ab59128865304a61b9d55ea1e74624b4b467e709 100644
+--- a/resources/templates/codegen/init_h.inja
++++ b/resources/templates/codegen/init_h.inja
+@@ -60,9 +60,16 @@ extern PPCFuncMapping PPCFuncMappings[];
+   REX_EXTERN(name);            \
+   REX_EXTERN(__imp__##name)
+ 
++#if REX_PLATFORM_MAC
++// Mach-O does not support ELF-style function aliases. Define the generated
++// function under its public symbol directly. Darwin hooks must use the
++// registry rather than ELF weak-alias interposition.
++#define DEFINE_REX_FUNC(name) REX_EXTERN(name)
++#else
+ #define DEFINE_REX_FUNC(name)                                  \
+   __attribute__((alias("__imp__" #name))) REX_WEAK_FUNC(name); \
+   REX_EXTERN(__imp__##name)
++#endif
+ 
+ //=============================================================================
+ // Function Prologue
+@@ -102,7 +109,7 @@ extern PPCFuncMapping PPCFuncMappings[];
+ // Memory Access
+ //=============================================================================
+ 
+-#if REX_PLATFORM_WIN32
++#if REX_PLATFORM_WIN32 || REX_PLATFORM_MAC
+ #define REX_PHYS_HOST_OFFSET(addr) (((u32)(addr) >= 0xE0000000u) ? 0x1000u : 0u)
+ #else
+ #define REX_PHYS_HOST_OFFSET(addr) 0u
+diff --git a/resources/templates/test/ppc_config_h.inja b/resources/templates/test/ppc_config_h.inja
+index f2c2d622c7dc81896e9d0158536773a99073e749..e86915b71548c26805bd673d090aaaee55090f05 100644
+--- a/resources/templates/test/ppc_config_h.inja
++++ b/resources/templates/test/ppc_config_h.inja
+@@ -55,12 +55,16 @@
+ #endif
+ 
+ #ifndef DEFINE_REX_FUNC
++#if REX_PLATFORM_MAC
++#define DEFINE_REX_FUNC(name) REX_EXTERN(name)
++#else
+ #define DEFINE_REX_FUNC(name)                                  \
+   __attribute__((alias("__imp__" #name))) REX_WEAK_FUNC(name); \
+   REX_EXTERN(__imp__##name)
+ #endif
++#endif
+ 
+-#if REX_PLATFORM_WIN32
++#if REX_PLATFORM_WIN32 || REX_PLATFORM_MAC
+ #define REX_PHYS_HOST_OFFSET(addr) (((u32)(addr) >= 0xE0000000u) ? 0x1000u : 0u)
+ #else
+ #define REX_PHYS_HOST_OFFSET(addr) 0u
+@@ -177,4 +181,3 @@ inline std::atomic<i32>& ppc_global_lock_count_() {
+     assert(old_count_ >= 1 && "LeaveGlobalLock called without matching EnterGlobalLock"); \
+     rex::thread::global_critical_region::mutex().unlock();                                \
+   } while (0)
+-
+diff --git a/src/core/CMakeLists.txt b/src/core/CMakeLists.txt
+index faa4847b2cccd78160acc1ac2a93615955303233..6f9e1322b6a8490b769034cbc3803045eff9b39a 100644
+--- a/src/core/CMakeLists.txt
++++ b/src/core/CMakeLists.txt
+@@ -89,7 +89,8 @@ target_include_directories(rexcore PRIVATE
+ )
+ 
+ if(UNIX)
+-    target_link_libraries(rexcore PRIVATE pthread rt dl)
++    find_package(Threads REQUIRED)
++    target_link_libraries(rexcore PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+ endif()
+ 
+ target_link_libraries(rexcore
+@@ -122,4 +123,3 @@ if(REXGLUE_ENABLE_PERF_COUNTERS)
+     target_compile_definitions(rexcore PUBLIC
+         $<$<NOT:$<CONFIG:Release>>:REXGLUE_ENABLE_PERF_COUNTERS>)
+ endif()
+-
+diff --git a/src/core/clock_posix.cpp b/src/core/clock_posix.cpp
+index 53b4462ba6f0bda9d7f4b0bf0b2437527fcdcccf..1d59ca95706a1ee858b863bc9d9659e4b5512c40 100644
+--- a/src/core/clock_posix.cpp
++++ b/src/core/clock_posix.cpp
+@@ -17,13 +17,10 @@ static_assert(REX_PLATFORM_LINUX || REX_PLATFORM_MAC, "This file is POSIX-only")
+ namespace rex::chrono {
+ 
+ uint64_t Clock::host_tick_frequency_platform() {
+-  timespec res;
+-  int error = clock_getres(CLOCK_MONOTONIC_RAW, &res);
+-  assert_zero(error);
+-  assert_zero(res.tv_sec);  // Sub second resolution is required.
+-
+-  // Convert nano seconds to hertz. Resolution is 1ns on most systems.
+-  return 1000000000ull / res.tv_nsec;
++  // host_tick_count_platform returns nanoseconds regardless of the clock's
++  // precision. clock_getres reports precision (42 ns on Apple Silicon), not
++  // the units of the returned counter, so it must not be used as frequency.
++  return 1000000000ull;
+ }
+ 
+ uint64_t Clock::host_tick_count_platform() {
+diff --git a/src/core/exception_handler_posix.cpp b/src/core/exception_handler_posix.cpp
+index 8aced51f2b77c087f7a9b1f05faad0a91a7850ad..ad5a847d166f95c752c9d51cf3f4ece3b28b5ecc 100644
+--- a/src/core/exception_handler_posix.cpp
++++ b/src/core/exception_handler_posix.cpp
+@@ -23,13 +23,23 @@
+ #include <rex/math.h>
+ #include <rex/platform.h>
+ 
++#if REX_PLATFORM_MAC
++#include <sys/ucontext.h>
++#else
+ #include <ucontext.h>
++#endif
++#if REX_PLATFORM_MAC
++#include <mach/arm/thread_status.h>
++#endif
+ 
+ namespace rex::arch {
+ 
+ bool signal_handlers_installed_ = false;
+ struct sigaction original_sigill_handler_;
+ struct sigaction original_sigsegv_handler_;
++#if REX_PLATFORM_MAC
++struct sigaction original_sigbus_handler_;
++#endif
+ 
+ // This can be as large as needed, but isn't often needed.
+ // As we will be sometimes firing many exceptions we want to avoid having to
+@@ -42,11 +52,39 @@ std::pair<ExceptionHandler::Handler, void*> handlers_[kMaxHandlerCount];
+ 
+ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+                                      void* signal_context) {
++#if REX_PLATFORM_MAC
++  mcontext_t mcontext = reinterpret_cast<ucontext_t*>(signal_context)->uc_mcontext;
++#else
+   mcontext_t& mcontext = reinterpret_cast<ucontext_t*>(signal_context)->uc_mcontext;
++#endif
+ 
+   HostThreadContext thread_context;
+ 
+ #if REX_ARCH_AMD64
++#if REX_PLATFORM_MAC
++  auto& thread_state = mcontext->__ss;
++  auto& float_state = mcontext->__fs;
++  thread_context.rip = thread_state.__rip;
++  thread_context.eflags = static_cast<uint32_t>(thread_state.__rflags);
++  thread_context.rax = thread_state.__rax;
++  thread_context.rcx = thread_state.__rcx;
++  thread_context.rdx = thread_state.__rdx;
++  thread_context.rbx = thread_state.__rbx;
++  thread_context.rsp = thread_state.__rsp;
++  thread_context.rbp = thread_state.__rbp;
++  thread_context.rsi = thread_state.__rsi;
++  thread_context.rdi = thread_state.__rdi;
++  thread_context.r8 = thread_state.__r8;
++  thread_context.r9 = thread_state.__r9;
++  thread_context.r10 = thread_state.__r10;
++  thread_context.r11 = thread_state.__r11;
++  thread_context.r12 = thread_state.__r12;
++  thread_context.r13 = thread_state.__r13;
++  thread_context.r14 = thread_state.__r14;
++  thread_context.r15 = thread_state.__r15;
++  std::memcpy(thread_context.xmm_registers, &float_state.__fpu_xmm0,
++              sizeof(thread_context.xmm_registers));
++#else
+   thread_context.rip = uint64_t(mcontext.gregs[REG_RIP]);
+   thread_context.eflags = uint32_t(mcontext.gregs[REG_EFL]);
+   // The REG_ order may be different than the register indices in the
+@@ -69,7 +107,21 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+   thread_context.r15 = uint64_t(mcontext.gregs[REG_R15]);
+   std::memcpy(thread_context.xmm_registers, mcontext.fpregs->_xmm,
+               sizeof(thread_context.xmm_registers));
++#endif
+ #elif REX_ARCH_ARM64
++#if REX_PLATFORM_MAC
++  auto& thread_state = mcontext->__ss;
++  auto& neon_state = mcontext->__ns;
++  std::memcpy(thread_context.x, thread_state.__x, sizeof(thread_state.__x));
++  thread_context.x[29] = __darwin_arm_thread_state64_get_fp(thread_state);
++  thread_context.x[30] = __darwin_arm_thread_state64_get_lr(thread_state);
++  thread_context.sp = __darwin_arm_thread_state64_get_sp(thread_state);
++  thread_context.pc = __darwin_arm_thread_state64_get_pc(thread_state);
++  thread_context.pstate = thread_state.__cpsr;
++  thread_context.fpsr = neon_state.__fpsr;
++  thread_context.fpcr = neon_state.__fpcr;
++  std::memcpy(thread_context.v, neon_state.__v, sizeof(thread_context.v));
++#else
+   std::memcpy(thread_context.x, mcontext.regs, sizeof(thread_context.x));
+   thread_context.sp = mcontext.sp;
+   thread_context.pc = mcontext.pc;
+@@ -98,6 +150,7 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+     thread_context.fpcr = mcontext_fpsimd->fpcr;
+     std::memcpy(thread_context.v, mcontext_fpsimd->vregs, sizeof(thread_context.v));
+   }
++#endif
+ #endif  // REX_ARCH
+ 
+   Exception ex;
+@@ -105,15 +158,44 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+     case SIGILL:
+       ex.InitializeIllegalInstruction(&thread_context);
+       break;
+-    case SIGSEGV: {
++    case SIGSEGV:
++#if REX_PLATFORM_MAC
++    case SIGBUS:
++#endif
++    {
+       Exception::AccessViolationOperation access_violation_operation;
+ #if REX_ARCH_AMD64
+       // x86_pf_error_code::X86_PF_WRITE
+       constexpr uint64_t kX86PageFaultErrorCodeWrite = UINT64_C(1) << 1;
++#if REX_PLATFORM_MAC
++      access_violation_operation =
++          (uint64_t(mcontext->__es.__err) & kX86PageFaultErrorCodeWrite)
++              ? Exception::AccessViolationOperation::kWrite
++              : Exception::AccessViolationOperation::kRead;
++#else
+       access_violation_operation = (uint64_t(mcontext.gregs[REG_ERR]) & kX86PageFaultErrorCodeWrite)
+                                        ? Exception::AccessViolationOperation::kWrite
+                                        : Exception::AccessViolationOperation::kRead;
++#endif
+ #elif REX_ARCH_ARM64
++#if REX_PLATFORM_MAC
++      const uint64_t exception_syndrome = mcontext->__es.__esr;
++      if (((exception_syndrome >> 26) & 0b111110) == 0b100100) {
++        access_violation_operation = (exception_syndrome & (UINT64_C(1) << 6))
++                                         ? Exception::AccessViolationOperation::kWrite
++                                         : Exception::AccessViolationOperation::kRead;
++      } else {
++        bool instruction_is_store;
++        if (IsArm64LoadPrefetchStore(*reinterpret_cast<const uint32_t*>(thread_context.pc),
++                                     instruction_is_store)) {
++          access_violation_operation = instruction_is_store
++                                           ? Exception::AccessViolationOperation::kWrite
++                                           : Exception::AccessViolationOperation::kRead;
++        } else {
++          access_violation_operation = Exception::AccessViolationOperation::kUnknown;
++        }
++      }
++#else
+       // For a Data Abort (EC - ESR_EL1 bits 31:26 - 0b100100 from a lower
+       // Exception Level, 0b100101 without a change in the Exception Level),
+       // bit 6 is 0 for reading from a memory location, 1 for writing to a
+@@ -145,6 +227,7 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+           access_violation_operation = Exception::AccessViolationOperation::kUnknown;
+         }
+       }
++#endif
+ #else
+       access_violation_operation = Exception::AccessViolationOperation::kUnknown;
+ #endif  // REX_ARCH
+@@ -160,6 +243,30 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+     if (handlers_[i].first(&ex, handlers_[i].second)) {
+       // Exception handled.
+ #if REX_ARCH_AMD64
++#if REX_PLATFORM_MAC
++      thread_state.__rip = thread_context.rip;
++      thread_state.__rflags = thread_context.eflags;
++      uint64_t* integer_registers[] = {
++          &thread_state.__rax, &thread_state.__rcx, &thread_state.__rdx, &thread_state.__rbx,
++          &thread_state.__rsp, &thread_state.__rbp, &thread_state.__rsi, &thread_state.__rdi,
++          &thread_state.__r8,  &thread_state.__r9,  &thread_state.__r10, &thread_state.__r11,
++          &thread_state.__r12, &thread_state.__r13, &thread_state.__r14, &thread_state.__r15,
++      };
++      uint32_t modified_register_index;
++      uint16_t modified_int_registers_remaining = ex.modified_int_registers();
++      while (rex::bit_scan_forward(modified_int_registers_remaining, &modified_register_index)) {
++        modified_int_registers_remaining &= ~(UINT16_C(1) << modified_register_index);
++        *integer_registers[modified_register_index] =
++            thread_context.int_registers[modified_register_index];
++      }
++      uint16_t modified_xmm_registers_remaining = ex.modified_xmm_registers();
++      while (rex::bit_scan_forward(modified_xmm_registers_remaining, &modified_register_index)) {
++        modified_xmm_registers_remaining &= ~(UINT16_C(1) << modified_register_index);
++        std::memcpy(reinterpret_cast<uint8_t*>(&float_state.__fpu_xmm0) +
++                        modified_register_index * sizeof(vec128_t),
++                    &thread_context.xmm_registers[modified_register_index], sizeof(vec128_t));
++      }
++#else
+       mcontext.gregs[REG_RIP] = greg_t(thread_context.rip);
+       mcontext.gregs[REG_EFL] = greg_t(thread_context.eflags);
+       uint32_t modified_register_index;
+@@ -180,13 +287,39 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+         std::memcpy(&mcontext.fpregs->_xmm[modified_register_index],
+                     &thread_context.xmm_registers[modified_register_index], sizeof(vec128_t));
+       }
++#endif
+ #elif REX_ARCH_ARM64
+       uint32_t modified_register_index;
+       uint32_t modified_x_registers_remaining = ex.modified_x_registers();
+       while (rex::bit_scan_forward(modified_x_registers_remaining, &modified_register_index)) {
+         modified_x_registers_remaining &= ~(UINT32_C(1) << modified_register_index);
++#if REX_PLATFORM_MAC
++        if (modified_register_index < 29) {
++          thread_state.__x[modified_register_index] = thread_context.x[modified_register_index];
++        } else if (modified_register_index == 29) {
++          __darwin_arm_thread_state64_set_fp(thread_state, thread_context.x[29]);
++        } else if (modified_register_index == 30) {
++          __darwin_arm_thread_state64_set_lr_fptr(
++              thread_state, reinterpret_cast<void (*)()>(thread_context.x[30]));
++        }
++#else
+         mcontext.regs[modified_register_index] = thread_context.x[modified_register_index];
++#endif
+       }
++#if REX_PLATFORM_MAC
++      __darwin_arm_thread_state64_set_sp(thread_state, thread_context.sp);
++      __darwin_arm_thread_state64_set_pc_fptr(
++          thread_state, reinterpret_cast<void (*)()>(thread_context.pc));
++      thread_state.__cpsr = static_cast<uint32_t>(thread_context.pstate);
++      neon_state.__fpsr = thread_context.fpsr;
++      neon_state.__fpcr = thread_context.fpcr;
++      uint32_t modified_v_registers_remaining = ex.modified_v_registers();
++      while (rex::bit_scan_forward(modified_v_registers_remaining, &modified_register_index)) {
++        modified_v_registers_remaining &= ~(UINT32_C(1) << modified_register_index);
++        std::memcpy(&neon_state.__v[modified_register_index],
++                    &thread_context.v[modified_register_index], sizeof(vec128_t));
++      }
++#else
+       mcontext.sp = thread_context.sp;
+       mcontext.pc = thread_context.pc;
+       mcontext.pstate = thread_context.pstate;
+@@ -201,6 +334,7 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+           mcontext.regs[modified_register_index] = thread_context.x[modified_register_index];
+         }
+       }
++#endif
+ #endif  // REX_ARCH
+       return;
+     }
+@@ -221,6 +355,13 @@ void ExceptionHandler::Install(Handler fn, void* data) {
+     if (sigaction(SIGSEGV, &signal_handler, &original_sigsegv_handler_) != 0) {
+       assert_always("Failed to install new SIGSEGV handler");
+     }
++#if REX_PLATFORM_MAC
++    // Darwin reports protection and memory-mapping faults as SIGBUS in many
++    // cases where Linux reports SIGSEGV.
++    if (sigaction(SIGBUS, &signal_handler, &original_sigbus_handler_) != 0) {
++      assert_always("Failed to install new SIGBUS handler");
++    }
++#endif
+     signal_handlers_installed_ = true;
+   }
+ 
+@@ -261,6 +402,11 @@ void ExceptionHandler::Uninstall(Handler fn, void* data) {
+       if (sigaction(SIGSEGV, &original_sigsegv_handler_, NULL) != 0) {
+         assert_always("Failed to restore original SIGSEGV handler");
+       }
++#if REX_PLATFORM_MAC
++      if (sigaction(SIGBUS, &original_sigbus_handler_, NULL) != 0) {
++        assert_always("Failed to restore original SIGBUS handler");
++      }
++#endif
+       signal_handlers_installed_ = false;
+     }
+   }
+diff --git a/src/core/filesystem_posix.cpp b/src/core/filesystem_posix.cpp
+index eb49e963e292b671535887114a71a79869cab54e..808bcd7a87bf276aa171d395dfc65621c2e13b9f 100644
+--- a/src/core/filesystem_posix.cpp
++++ b/src/core/filesystem_posix.cpp
+@@ -20,6 +20,11 @@
+ #include <sys/types.h>
+ #include <unistd.h>
+ 
++#if defined(__APPLE__)
++#include <limits.h>
++#include <mach-o/dyld.h>
++#endif
++
+ #include <rex/assert.h>
+ #include <rex/filesystem.h>
+ #include <rex/logging.h>
+@@ -52,10 +57,27 @@ std::filesystem::path to_path(const std::u16string_view source) {
+ namespace filesystem {
+ 
+ std::filesystem::path GetExecutablePath() {
++#if REX_PLATFORM_MAC
++  uint32_t size = 0;
++  (void)_NSGetExecutablePath(nullptr, &size);
++  if (!size) {
++    return {};
++  }
++  std::string executable_path(size, '\0');
++  if (_NSGetExecutablePath(executable_path.data(), &size) != 0) {
++    return {};
++  }
++  char resolved_path[PATH_MAX];
++  if (realpath(executable_path.c_str(), resolved_path)) {
++    return std::filesystem::path(resolved_path);
++  }
++  return std::filesystem::path(executable_path.c_str());
++#else
+   char buff[FILENAME_MAX] = "";
+   readlink("/proc/self/exe", buff, FILENAME_MAX);
+   std::string s(buff);
+   return s;
++#endif
+ }
+ 
+ std::filesystem::path GetExecutableFolder() {
+@@ -87,11 +109,19 @@ FILE* OpenFile(const std::filesystem::path& path, const std::string_view mode) {
+ }
+ 
+ bool Seek(FILE* file, int64_t offset, int origin) {
++#if REX_PLATFORM_MAC
++  return fseeko(file, static_cast<off_t>(offset), origin) == 0;
++#else
+   return fseeko64(file, off64_t(offset), origin) == 0;
++#endif
+ }
+ 
+ int64_t Tell(FILE* file) {
++#if REX_PLATFORM_MAC
++  return int64_t(ftello(file));
++#else
+   return int64_t(ftello64(file));
++#endif
+ }
+ 
+ bool TruncateStdioFile(FILE* file, uint64_t length) {
+@@ -102,7 +132,7 @@ bool TruncateStdioFile(FILE* file, uint64_t length) {
+   if (position < 0) {
+     return false;
+   }
+-  if (ftruncate64(fileno(file), off64_t(length))) {
++  if (ftruncate(fileno(file), static_cast<off_t>(length))) {
+     return false;
+   }
+   if (uint64_t(position) > length) {
+diff --git a/src/core/mapped_memory_posix.cpp b/src/core/mapped_memory_posix.cpp
+index 92c06c890f225c382b25478dd781399a730dd543..85ebcd230e40baa721209c59a021876e1985e517 100644
+--- a/src/core/mapped_memory_posix.cpp
++++ b/src/core/mapped_memory_posix.cpp
+@@ -51,8 +51,8 @@ class PosixMappedMemory : public MappedMemory {
+ 
+     size_t map_length = length;
+     if (!length) {
+-      struct stat64 file_stat;
+-      if (fstat64(file_descriptor, &file_stat)) {
++      struct stat file_stat;
++      if (fstat(file_descriptor, &file_stat)) {
+         close(file_descriptor);
+         return nullptr;
+       }
+@@ -75,7 +75,7 @@ class PosixMappedMemory : public MappedMemory {
+     }
+     if (file_descriptor_ >= 0) {
+       if (truncate_size) {
+-        ftruncate64(file_descriptor_, off64_t(truncate_size));
++        ftruncate(file_descriptor_, static_cast<off_t>(truncate_size));
+       }
+       close(file_descriptor_);
+       file_descriptor_ = -1;
+diff --git a/src/core/memory_posix.cpp b/src/core/memory_posix.cpp
+index fce701ee25bb10e32c76de267d1e7b09617270a0..2a8fb0e7c29f53ee76e9f51a59ae462e8df70ecc 100644
+--- a/src/core/memory_posix.cpp
++++ b/src/core/memory_posix.cpp
+@@ -209,6 +209,34 @@ void* AllocFixed(void* base_address, size_t length, AllocationType allocation_ty
+   // - New allocation: mmap with MAP_FIXED_NOREPLACE (never silently replace)
+   const uint32_t prot_requested = ToPosixProtectFlags(access);
+ 
++#if REX_PLATFORM_MAC
++  // Apple Silicon has 16 KiB host pages while Xenon uses 4 KiB virtual pages.
++  // mmap and mprotect require host-page alignment, so commit the enclosing
++  // host pages while retaining guest-page granularity in BaseHeap bookkeeping.
++  void* requested_base_address = base_address;
++  if (base_address) {
++    const uintptr_t host_page_mask = page_size() - 1;
++    const uintptr_t requested_start = reinterpret_cast<uintptr_t>(base_address);
++    const uintptr_t requested_end = requested_start + length;
++    const uintptr_t host_start = requested_start & ~host_page_mask;
++    const uintptr_t host_end = (requested_end + host_page_mask) & ~host_page_mask;
++    base_address = reinterpret_cast<void*>(host_start);
++    length = host_end - host_start;
++  }
++
++  // The fixed guest ranges are already backed by the sparse physical-memory
++  // file. Committing must only change protection; replacing the range with an
++  // anonymous MAP_FIXED mapping would break physical-memory aliasing.
++  if (requested_base_address &&
++      (allocation_type == AllocationType::kCommit ||
++       allocation_type == AllocationType::kReserveCommit)) {
++    if (mprotect(base_address, length, static_cast<int>(prot_requested)) == 0) {
++      return requested_base_address;
++    }
++    return nullptr;
++  }
++#endif
++
+   // Determine initial protection based on allocation type
+   int prot_initial = 0;
+   switch (allocation_type) {
+@@ -236,7 +264,11 @@ void* AllocFixed(void* base_address, size_t length, AllocationType allocation_ty
+ 
+   void* result = mmap(base_address, length, prot_initial, flags, -1, 0);
+   if (result != MAP_FAILED) {
++#if REX_PLATFORM_MAC
++    return requested_base_address ? requested_base_address : result;
++#else
+     return result;
++#endif
+   }
+ #if defined(MAP_FIXED_NOREPLACE) && REX_PLATFORM_LINUX
+   // Handle EEXIST: address already has a mapping (e.g., from prior Reserve)
+@@ -259,6 +291,15 @@ void* AllocFixed(void* base_address, size_t length, AllocationType allocation_ty
+ bool DeallocFixed(void* base_address, size_t length, DeallocationType deallocation_type) {
+   switch (deallocation_type) {
+     case DeallocationType::kDecommit: {
++#if REX_PLATFORM_MAC
++      const uintptr_t host_page_mask = page_size() - 1;
++      const uintptr_t requested_start = reinterpret_cast<uintptr_t>(base_address);
++      const uintptr_t requested_end = requested_start + length;
++      const uintptr_t host_start = requested_start & ~host_page_mask;
++      const uintptr_t host_end = (requested_end + host_page_mask) & ~host_page_mask;
++      base_address = reinterpret_cast<void*>(host_start);
++      length = host_end - host_start;
++#endif
+       // Decommit: remove access first, then release physical pages
+       if (mprotect(base_address, length, PROT_NONE) != 0) {
+         return false;
+@@ -297,6 +338,16 @@ bool Protect(void* base_address, size_t length, PageAccess access, PageAccess* o
+   }
+ #endif
+ 
++#if REX_PLATFORM_MAC
++  const uintptr_t host_page_mask = page_size() - 1;
++  const uintptr_t requested_start = reinterpret_cast<uintptr_t>(base_address);
++  const uintptr_t requested_end = requested_start + length;
++  const uintptr_t host_start = requested_start & ~host_page_mask;
++  const uintptr_t host_end = (requested_end + host_page_mask) & ~host_page_mask;
++  base_address = reinterpret_cast<void*>(host_start);
++  length = host_end - host_start;
++#endif
++
+   uint32_t prot = ToPosixProtectFlags(access);
+   return mprotect(base_address, length, prot) == 0;
+ }
+@@ -348,6 +399,22 @@ FileMappingHandle CreateFileMappingHandle(const std::filesystem::path& path, siz
+     return kFileMappingHandleInvalid;
+   }
+   return static_cast<FileMappingHandle>(ashmem_fd);
++#elif REX_PLATFORM_MAC
++  // Darwin's POSIX shared-memory implementation rejects the 4.5 GiB sparse
++  // object used for the guest and physical views. A promptly-unlinked sparse
++  // temporary file has the same process-local mmap semantics without leaving
++  // an on-disk artifact behind.
++  char temporary_path[] = "/tmp/rexglue-memory-XXXXXX";
++  int ret = mkstemp(temporary_path);
++  if (ret < 0) {
++    return kFileMappingHandleInvalid;
++  }
++  unlink(temporary_path);
++  if (ftruncate(ret, static_cast<off_t>(length)) != 0) {
++    close(ret);
++    return kFileMappingHandleInvalid;
++  }
++  return static_cast<FileMappingHandle>(ret);
+ #else
+   int oflag;
+   switch (access) {
+@@ -372,7 +439,7 @@ FileMappingHandle CreateFileMappingHandle(const std::filesystem::path& path, siz
+   if (ret < 0) {
+     return kFileMappingHandleInvalid;
+   }
+-  if (ftruncate64(ret, static_cast<off_t>(length)) != 0) {
++  if (ftruncate(ret, static_cast<off_t>(length)) != 0) {
+     close(ret);
+     shm_unlink(full_path.c_str());
+     return kFileMappingHandleInvalid;
+@@ -383,7 +450,7 @@ FileMappingHandle CreateFileMappingHandle(const std::filesystem::path& path, siz
+ 
+ void CloseFileMappingHandle(FileMappingHandle handle, const std::filesystem::path& path) {
+   close(static_cast<int>(handle));
+-#if !REX_PLATFORM_ANDROID
++#if !REX_PLATFORM_ANDROID && !REX_PLATFORM_MAC
+   auto full_path = MakeShmName(path);
+   shm_unlink(full_path.c_str());
+ #endif
+@@ -407,8 +474,8 @@ void* MapFileView(FileMappingHandle handle, void* base_address, size_t length, P
+   }
+ 
+   uint32_t prot = ToPosixProtectFlags(access);
+-  void* result = mmap64(base_address, length, prot, flags, static_cast<int>(handle),
+-                        static_cast<off_t>(file_offset));
++  void* result = mmap(base_address, length, prot, flags, static_cast<int>(handle),
++                      static_cast<off_t>(file_offset));
+   if (result == MAP_FAILED) {
+     return nullptr;
+   }
+diff --git a/src/core/threading_posix.cpp b/src/core/threading_posix.cpp
+index 09b0cd99ef3f73f0e601fad870ff914845ceb1d1..fba1f8ee10bbfb6a3f7415d6898f52add3f745f8 100644
+--- a/src/core/threading_posix.cpp
++++ b/src/core/threading_posix.cpp
+@@ -24,8 +24,12 @@ static_assert(REX_PLATFORM_LINUX || REX_PLATFORM_MAC, "This file is POSIX-only")
+ 
+ #include <pthread.h>
+ #include <semaphore.h>
++#if REX_PLATFORM_LINUX
+ #include <sys/eventfd.h>
+ #include <sys/syscall.h>
++#elif REX_PLATFORM_MAC
++#include <mach/mach.h>
++#endif
+ #include <sys/time.h>
+ #include <sys/types.h>
+ #include <unistd.h>
+@@ -110,13 +114,25 @@ enum class SignalType {
+ };
+ 
+ int GetSystemSignal(SignalType num) {
++#if REX_PLATFORM_MAC
++  static constexpr int kSignals[] = {SIGUSR1, SIGUSR2};
++  return kSignals[static_cast<size_t>(num)];
++#else
+   auto result = SIGRTMIN + static_cast<int>(num);
+   assert_true(result < SIGRTMAX);
+   return result;
++#endif
+ }
+ 
+ SignalType GetSystemSignalType(int num) {
++#if REX_PLATFORM_MAC
++  if (num == SIGUSR1) {
++    return SignalType::kThreadSuspend;
++  }
++  return SignalType::kThreadUserCallback;
++#else
+   return static_cast<SignalType>(num - SIGRTMIN);
++#endif
+ }
+ 
+ std::array<std::atomic<bool>, static_cast<size_t>(SignalType::k_Count)> signal_handler_installed =
+@@ -145,7 +161,13 @@ void EnableAffinityConfiguration() {}
+ // uint64_t ticks() { return mach_absolute_time(); }
+ 
+ uint32_t current_thread_system_id() {
++#if REX_PLATFORM_MAC
++  uint64_t thread_id = 0;
++  pthread_threadid_np(nullptr, &thread_id);
++  return static_cast<uint32_t>(thread_id);
++#else
+   return static_cast<uint32_t>(syscall(SYS_gettid));
++#endif
+ }
+ 
+ void MaybeYield() {
+@@ -583,7 +605,11 @@ class PosixCondition<Thread> : public PosixConditionBase {
+         exit_code_(0),
+         state_(State::kUninitialized),
+         suspend_count_(0) {
++#if REX_PLATFORM_MAC
++    semaphore_create(mach_task_self(), &suspend_sem_, SYNC_POLICY_FIFO, 0);
++#else
+     sem_init(&suspend_sem_, 0, 0);
++#endif
+ #if REX_PLATFORM_ANDROID
+     android_pre_api_26_name_[0] = '\0';
+ #endif
+@@ -625,7 +651,11 @@ class PosixCondition<Thread> : public PosixConditionBase {
+         exit_code_(0),
+         state_(State::kRunning),
+         suspend_count_(0) {
++#if REX_PLATFORM_MAC
++    semaphore_create(mach_task_self(), &suspend_sem_, SYNC_POLICY_FIFO, 0);
++#else
+     sem_init(&suspend_sem_, 0, 0);
++#endif
+ #if REX_PLATFORM_ANDROID
+     android_pre_api_26_name_[0] = '\0';
+ #endif
+@@ -669,7 +699,13 @@ class PosixCondition<Thread> : public PosixConditionBase {
+     WaitStarted();
+     std::unique_lock<std::mutex> lock(state_mutex_);
+     if (state_ != State::kUninitialized && state_ != State::kFinished) {
+-      pthread_setname_np(thread_, std::string(name).c_str());
++#if REX_PLATFORM_MAC
++      if (pthread_equal(thread_, pthread_self())) {
++        pthread_setname_np(name.c_str());
++      }
++#else
++      pthread_setname_np(thread_, name.c_str());
++#endif
+ #if REX_PLATFORM_ANDROID
+       SetAndroidPreApi26Name(name);
+ #endif
+@@ -687,10 +723,22 @@ class PosixCondition<Thread> : public PosixConditionBase {
+   }
+ #endif
+ 
+-  uint32_t system_id() const { return static_cast<uint32_t>(thread_); }
++  uint32_t system_id() const {
++#if REX_PLATFORM_MAC
++    uint64_t thread_id = 0;
++    pthread_threadid_np(thread_, &thread_id);
++    return static_cast<uint32_t>(thread_id);
++#else
++    return static_cast<uint32_t>(thread_);
++#endif
++  }
+ 
+   uint64_t affinity_mask() {
+     WaitStarted();
++#if REX_PLATFORM_MAC
++    auto processor_count = std::min<long>(sysconf(_SC_NPROCESSORS_ONLN), 64);
++    return processor_count >= 64 ? UINT64_MAX : ((UINT64_C(1) << processor_count) - 1);
++#else
+     cpu_set_t cpu_set;
+ #if REX_PLATFORM_ANDROID
+     if (sched_getaffinity(pthread_gettid_np(thread_), sizeof(cpu_set_t), &cpu_set) != 0) {
+@@ -708,10 +756,16 @@ class PosixCondition<Thread> : public PosixConditionBase {
+       result |= set << i;
+     }
+     return result;
++#endif
+   }
+ 
+   void set_affinity_mask(uint64_t mask) {
+     WaitStarted();
++#if REX_PLATFORM_MAC
++    // macOS doesn't expose portable pthread CPU affinity masks. Scheduling
++    // affinity is advisory there, so retain the guest-visible value only.
++    (void)mask;
++#else
+     cpu_set_t cpu_set;
+     CPU_ZERO(&cpu_set);
+     for (auto i = 0u; i < 64; i++) {
+@@ -727,6 +781,7 @@ class PosixCondition<Thread> : public PosixConditionBase {
+     if (pthread_setaffinity_np(thread_, sizeof(cpu_set_t), &cpu_set) != 0) {
+       assert_always();
+     }
++#endif
+ #endif
+   }
+ 
+@@ -784,6 +839,8 @@ class PosixCondition<Thread> : public PosixConditionBase {
+ #if REX_PLATFORM_ANDROID
+     int result = sigqueue(pthread_gettid_np(thread_),
+                           GetSystemSignal(SignalType::kThreadUserCallback), value);
++#elif REX_PLATFORM_MAC
++    int result = pthread_kill(thread_, GetSystemSignal(SignalType::kThreadUserCallback));
+ #else
+     int result = pthread_sigqueue(thread_, GetSystemSignal(SignalType::kThreadUserCallback), value);
+ #endif
+@@ -830,7 +887,11 @@ class PosixCondition<Thread> : public PosixConditionBase {
+     if (suspend_count_ == 0 && state_ == State::kSuspended) {
+       state_ = State::kRunning;
+       // Async-signal-safe wakeup for WaitSuspended() from signal handler path.
++#if REX_PLATFORM_MAC
++      semaphore_signal(suspend_sem_);
++#else
+       sem_post(&suspend_sem_);
++#endif
+     }
+     state_signal_.notify_all();
+     return true;
+@@ -905,12 +966,17 @@ class PosixCondition<Thread> : public PosixConditionBase {
+     state_signal_.wait(lock, [this] { return state_ != State::kUninitialized; });
+   }
+ 
+-  /// Uses sem_wait because it may be called from signal handler context.
++  /// Uses an async-signal-safe semaphore because this may run in a signal handler.
+   void WaitSuspended() {
++#if REX_PLATFORM_MAC
++    while (semaphore_wait(suspend_sem_) == KERN_ABORTED) {
++    }
++#else
+     int ret;
+     do {
+       ret = sem_wait(&suspend_sem_);
+     } while (ret == -1 && errno == EINTR);
++#endif
+   }
+ 
+   void* native_handle() const override { return reinterpret_cast<void*>(thread_); }
+@@ -922,14 +988,25 @@ class PosixCondition<Thread> : public PosixConditionBase {
+     if (thread_) {
+       pthread_join(thread_, nullptr);
+     }
++#if REX_PLATFORM_MAC
++    if (suspend_sem_ != SEMAPHORE_NULL) {
++      semaphore_destroy(mach_task_self(), suspend_sem_);
++      suspend_sem_ = SEMAPHORE_NULL;
++    }
++#else
+     sem_destroy(&suspend_sem_);
++#endif
+   }
+   pthread_t thread_;
+   bool signaled_;
+   int exit_code_;
+   State state_;             // Protected by state_mutex_
+   uint32_t suspend_count_;  // Protected by state_mutex_
++#if REX_PLATFORM_MAC
++  semaphore_t suspend_sem_ = SEMAPHORE_NULL;
++#else
+   sem_t suspend_sem_;
++#endif
+   mutable std::mutex state_mutex_;
+   mutable std::mutex callback_mutex_;
+   mutable std::condition_variable state_signal_;
+@@ -1394,7 +1471,11 @@ void Thread::Exit(int exit_code) {
+ }
+ 
+ void set_current_thread_name(const std::string_view name) {
++#if REX_PLATFORM_MAC
++  pthread_setname_np(std::string(name).c_str());
++#else
+   pthread_setname_np(pthread_self(), std::string(name).c_str());
++#endif
+ #if REX_PLATFORM_ANDROID
+   if (!android_pthread_getname_np_ && current_thread_) {
+     current_thread_->condition().SetAndroidPreApi26Name(name);
+diff --git a/src/graphics/pipeline/shader/spirv_translator.cpp b/src/graphics/pipeline/shader/spirv_translator.cpp
+index c7097056132baaffd088052bd9377f81411195a3..91631086047587bf898b804d75fa4b33876f577a 100644
+--- a/src/graphics/pipeline/shader/spirv_translator.cpp
++++ b/src/graphics/pipeline/shader/spirv_translator.cpp
+@@ -514,8 +514,27 @@ void SpirvShaderTranslator::StartTranslation() {
+       var_main_rectangle_guest_vertex_index_ =
+           builder_->createVariable(spv::NoPrecision, spv::StorageClassFunction, type_uint_,
+                                    "xe_var_rectangle_guest_vertex_index", const_uint_0_);
++      // Don't use the decorated gl_PerVertex interface block as a function-local
++      // value. SPIRV-Cross lowers that block directly to Metal stage outputs and
++      // can't materialize it as a normal local structure. Mirror its member
++      // layout in an undecorated structure instead.
++      Modification shader_modification = GetSpirvShaderModification();
++      uint32_t clip_distance_count = shader_modification.GetVertexClipDistanceCount();
++      uint32_t cull_distance_count = shader_modification.GetVertexCullDistanceCount();
++      std::vector<spv::Id> rectangle_per_vertex_members;
++      rectangle_per_vertex_members.push_back(type_float4_);
++      if (clip_distance_count) {
++        rectangle_per_vertex_members.push_back(builder_->makeArrayType(
++            type_float_, builder_->makeUintConstant(clip_distance_count), 0));
++      }
++      if (cull_distance_count) {
++        rectangle_per_vertex_members.push_back(builder_->makeArrayType(
++            type_float_, builder_->makeUintConstant(cull_distance_count), 0));
++      }
++      spv::Id type_rectangle_per_vertex =
++          builder_->makeStructType(rectangle_per_vertex_members, "XeRectanglePerVertex");
+       spv::Id type_rectangle_per_vertex_array =
+-          builder_->makeArrayType(type_output_per_vertex_, builder_->makeUintConstant(3), 0);
++          builder_->makeArrayType(type_rectangle_per_vertex, builder_->makeUintConstant(3), 0);
+       var_main_rectangle_per_vertex_ =
+           builder_->createVariable(spv::NoPrecision, spv::StorageClassFunction,
+                                    type_rectangle_per_vertex_array, "xe_var_rectangle_per_vertex");
+@@ -693,13 +712,40 @@ std::vector<uint8_t> SpirvShaderTranslator::CompleteTranslation() {
+       spv::Id rectangle_guest_vertex_index_int =
+           builder_->createUnaryOp(spv::OpBitcast, type_int_, rectangle_guest_vertex_index);
+ 
+-      // Store current iteration outputs.
+-      id_vector_temp_.clear();
+-      id_vector_temp_.push_back(rectangle_guest_vertex_index_int);
+-      builder_->createStore(
+-          builder_->createLoad(output_per_vertex_, spv::NoPrecision),
+-          builder_->createAccessChain(spv::StorageClassFunction, var_main_rectangle_per_vertex_,
+-                                      id_vector_temp_));
++      // Store current iteration outputs member by member. Loading the complete
++      // gl_PerVertex interface block is not representable in Metal Shading
++      // Language after SPIRV-Cross lowers it to stage output fields.
++      auto store_rectangle_per_vertex_component =
++          [this, rectangle_guest_vertex_index_int](uint32_t member_index,
++                                                   spv::Id component_index) {
++            id_vector_temp_.clear();
++            id_vector_temp_.push_back(builder_->makeIntConstant(int(member_index)));
++            if (component_index != spv::NoResult) {
++              id_vector_temp_.push_back(component_index);
++            }
++            spv::Id output_value = builder_->createLoad(
++                builder_->createAccessChain(spv::StorageClassOutput, output_per_vertex_,
++                                            id_vector_temp_),
++                spv::NoPrecision);
++            id_vector_temp_.insert(id_vector_temp_.begin(), rectangle_guest_vertex_index_int);
++            builder_->createStore(
++                output_value,
++                builder_->createAccessChain(spv::StorageClassFunction,
++                                            var_main_rectangle_per_vertex_, id_vector_temp_));
++          };
++      store_rectangle_per_vertex_component(kOutputPerVertexMemberPosition, spv::NoResult);
++      if (clip_distance_count && output_per_vertex_member_clip_distance_ != UINT32_MAX) {
++        for (uint32_t i = 0; i < clip_distance_count; ++i) {
++          store_rectangle_per_vertex_component(output_per_vertex_member_clip_distance_,
++                                               builder_->makeIntConstant(int(i)));
++        }
++      }
++      if (cull_distance_count && output_per_vertex_member_cull_distance_ != UINT32_MAX) {
++        for (uint32_t i = 0; i < cull_distance_count; ++i) {
++          store_rectangle_per_vertex_component(output_per_vertex_member_cull_distance_,
++                                               builder_->makeIntConstant(int(i)));
++        }
++      }
+       uint32_t interpolators_remaining = GetModificationInterpolatorMask();
+       uint32_t interpolator_index;
+       while (rex::bit_scan_forward(interpolators_remaining, &interpolator_index)) {
+@@ -884,7 +930,9 @@ std::vector<uint8_t> SpirvShaderTranslator::CompleteTranslation() {
+         }
+         builder_->createBranch(main_loop_continue_);
+       }
+-      if_not_last_guest_vertex.makeBeginElse();
++      // The then branch explicitly jumps back to the main loop above, so it is
++      // already terminated. Do not emit another branch to the if merge block.
++      if_not_last_guest_vertex.makeBeginElse(false);
+       {
+         spv::Id rectangle_host_vertex_in_primitive = builder_->createBinOp(
+             spv::OpBitwiseAnd, type_uint_,
+diff --git a/src/kernel/crt/heap.cpp b/src/kernel/crt/heap.cpp
+index 045fa8b20906b88123153ed3bda46ad464fcd563..84c7c6470c90e5ce8993ec4a682390f6b683cb5d 100644
+--- a/src/kernel/crt/heap.cpp
++++ b/src/kernel/crt/heap.cpp
+@@ -318,7 +318,8 @@ HeapDiagnostics ReXHeap::GetDiagnosticsLocked() const {
+     diagnostics.capacity += d.capacity;
+     diagnostics.allocated += d.allocated;
+     diagnostics.peak_allocated += d.peak_allocated;
+-    diagnostics.peak_request_size = std::max(diagnostics.peak_request_size, d.peak_request_size);
++    diagnostics.peak_request_size =
++        std::max(diagnostics.peak_request_size, static_cast<uint64_t>(d.peak_request_size));
+     diagnostics.oom_count += d.oom_count;
+   }
+   return diagnostics;
+diff --git a/src/kernel/xam/xam_net.cpp b/src/kernel/xam/xam_net.cpp
+index 0f6aa34ca1131cc0c8f36708a49c269d21d8d49f..495015afe68c825fc5b152817d2352e4b058371c 100644
+--- a/src/kernel/xam/xam_net.cpp
++++ b/src/kernel/xam/xam_net.cpp
+@@ -33,10 +33,11 @@
+ // NOTE: must be included last as it expects windows.h to already be included.
+ #define _WINSOCK_DEPRECATED_NO_WARNINGS  // inet_addr
+ #include <winsock2.h>                    // NOLINT(build/include_order)
+-#elif REX_PLATFORM_LINUX
++#elif REX_PLATFORM_LINUX || REX_PLATFORM_MAC
+ #include <arpa/inet.h>
+ #include <netinet/in.h>
+ #include <netinet/ip.h>
++#include <sys/select.h>
+ #include <sys/socket.h>
+ #endif
+ 
+diff --git a/src/system/gpu_plugin_loader.cpp b/src/system/gpu_plugin_loader.cpp
+index b60532f80d264b879a7180eb6b0a78b1ba3d0dc4..497031f09b8c586b52f315d393de2615b5194c78 100644
+--- a/src/system/gpu_plugin_loader.cpp
++++ b/src/system/gpu_plugin_loader.cpp
+@@ -38,6 +38,8 @@ std::string PluginFileName(std::string_view name) {
+   }
+ #if REX_PLATFORM_WIN32
+   return fmt::format("rexgpu-{}{}.dll", name, postfix);
++#elif REX_PLATFORM_MAC
++  return fmt::format("librexgpu-{}{}.dylib", name, postfix);
+ #else
+   return fmt::format("librexgpu-{}{}.so", name, postfix);
+ #endif
+diff --git a/src/system/xmemory.cpp b/src/system/xmemory.cpp
+index 7f69bb2e4c57dd37a5e3eb9cd21fc4eb5b5c5b5c..50eaa0667b42a442310d02332a3b9c9093ee68a2 100644
+--- a/src/system/xmemory.cpp
++++ b/src/system/xmemory.cpp
+@@ -143,9 +143,25 @@ bool Memory::Initialize() {
+     return false;
+   }
+ 
+-  // Attempt to create our views. This may fail at the first address
+-  // we pick, so try a few times.
+-  mapping_base_ = 0;
++  // Attempt to create our views. On Darwin, never probe hard-coded ranges
++  // with MAP_FIXED: they may overlap protected system mappings. Reserve one
++  // contiguous range selected by the kernel, then replace only that mapping
++  // with the aliased guest views.
++  mapping_base_ = nullptr;
++#if REX_PLATFORM_MAC
++  constexpr size_t kGuestMappingSize = 0x120000000ull;
++  auto mapping_base = reinterpret_cast<uint8_t*>(rex::memory::AllocFixed(
++      nullptr, kGuestMappingSize, rex::memory::AllocationType::kReserve,
++      rex::memory::PageAccess::kNoAccess));
++  if (mapping_base) {
++    if (!MapViews(mapping_base)) {
++      mapping_base_ = mapping_base;
++    } else {
++      rex::memory::DeallocFixed(mapping_base, kGuestMappingSize,
++                                rex::memory::DeallocationType::kRelease);
++    }
++  }
++#else
+   for (size_t n = 32; n < 64; n++) {
+     auto mapping_base = reinterpret_cast<uint8_t*>(1ull << n);
+     if (!MapViews(mapping_base)) {
+@@ -153,6 +169,7 @@ bool Memory::Initialize() {
+       break;
+     }
+   }
++#endif
+   if (!mapping_base_) {
+     REXSYS_ERROR("Unable to find a continuous block in the 64bit address space.");
+     assert_always();
+@@ -160,7 +177,6 @@ bool Memory::Initialize() {
+   }
+   virtual_membase_ = mapping_base_;
+   physical_membase_ = mapping_base_ + 0x100000000ull;
+-
+   // Prepare virtual heaps.
+   heaps_.v00000000.Initialize(this, virtual_membase_, memory::HeapType::kGuestVirtual, 0x00000000,
+                               0x40000000, 4096);
+diff --git a/src/system/xsocket.cpp b/src/system/xsocket.cpp
+index 0b44e06aa6bbbdadb38192e76189545095864bd1..c2496b733b2663773d4311773f5edb06bb09bbe3 100644
+--- a/src/system/xsocket.cpp
++++ b/src/system/xsocket.cpp
+@@ -49,7 +49,7 @@ X_STATUS XSocket::Initialize(AddressFamily af, Type type, Protocol proto) {
+ 
+   if (proto == Protocol::IPPROTO_VDP) {
+     // VDP is a layer on top of UDP.
+-    proto = Protocol::IPPROTO_UDP;
++    proto = static_cast<Protocol>(17);
+   }
+ 
+   native_handle_ = socket(af, type, proto);
+@@ -247,4 +247,4 @@ bool XSocket::QueuePacket(uint32_t src_ip, uint16_t src_port, const uint8_t* buf
+   return true;
+ }
+ 
+-}  // namespace rex::system
+\ No newline at end of file
++}  // namespace rex::system
+diff --git a/src/ui/CMakeLists.txt b/src/ui/CMakeLists.txt
+index 2ab063141e00fb046a47f7f7dc41a9631772923b..a8fd4ce1f45fa70c04fa2431708fa55df393d062 100644
+--- a/src/ui/CMakeLists.txt
++++ b/src/ui/CMakeLists.txt
+@@ -67,10 +67,12 @@ if(WIN32)
+     set(REXUI_PLATFORM_SOURCES
+         surface_win.cpp
+     )
+-else()
++elseif(UNIX AND NOT APPLE)
+     set(REXUI_PLATFORM_SOURCES
+         surface_gnulinux.cpp
+     )
++else()
++    set(REXUI_PLATFORM_SOURCES)
+ endif()
+ 
+ # Combine sources
+@@ -138,7 +140,7 @@ if(REXGLUE_USE_VULKAN)
+ endif()
+ 
+ # Platform-specific dependencies
+-if(NOT WIN32)
++if(UNIX AND NOT APPLE)
+     find_package(PkgConfig REQUIRED)
+     pkg_check_modules(X11_XCB REQUIRED x11-xcb)
+ 
+@@ -159,4 +161,3 @@ if(REXGLUE_USE_D3D12)
+     )
+ endif()
+ 
+-
+diff --git a/src/ui/vulkan/vulkan_instance.cpp b/src/ui/vulkan/vulkan_instance.cpp
+index 0d2ded393ebd45cebdfe499e203e7990cd65b438..72ab75ab6101d821338ee773202135098b08436f 100644
+--- a/src/ui/vulkan/vulkan_instance.cpp
++++ b/src/ui/vulkan/vulkan_instance.cpp
+@@ -116,6 +116,10 @@ std::unique_ptr<VulkanInstance> VulkanInstance::Create(const bool with_surface,
+     // #10.
+     requested_extensions.emplace("VK_KHR_win32_surface",
+                                  &vulkan_instance->extensions_.ext_KHR_win32_surface);
++#endif
++#ifdef VK_USE_PLATFORM_METAL_EXT
++    requested_extensions.emplace("VK_EXT_metal_surface",
++                                 &vulkan_instance->extensions_.ext_EXT_metal_surface);
+ #endif
+   }
+ 
+diff --git a/src/ui/vulkan/vulkan_presenter.cpp b/src/ui/vulkan/vulkan_presenter.cpp
+index 30bafbafdc1b96422a26587c57f18d7ac8c49a00..01ea95d315cef2a0ee089316f147d35d37e5541d 100644
+--- a/src/ui/vulkan/vulkan_presenter.cpp
++++ b/src/ui/vulkan/vulkan_presenter.cpp
+@@ -42,6 +42,10 @@
+ #if REX_PLATFORM_WIN32
+ #include <rex/ui/surface_win.h>
+ #endif
++#if REX_PLATFORM_MAC
++#include <SDL3/SDL_vulkan.h>
++#include <rex/ui/surface_sdl.h>
++#endif
+ 
+ REXCVAR_DEFINE_BOOL(present_render_pass_clear, true, "UI/Presenter",
+                     "Clear render pass during presentation");
+@@ -434,6 +438,11 @@ Surface::TypeFlags VulkanPresenter::GetSurfaceTypesSupportedByInstance(
+   if (instance_extensions.ext_KHR_win32_surface) {
+     type_flags |= Surface::kTypeFlag_Win32Hwnd;
+   }
++#endif
++#if REX_PLATFORM_MAC
++  if (instance_extensions.ext_EXT_metal_surface) {
++    type_flags |= Surface::kTypeFlag_SdlWindow;
++  }
+ #endif
+   return type_flags;
+ }
+@@ -823,6 +832,16 @@ VulkanPresenter::ConnectOrReconnectPaintingToSurfaceFromUIThread(Surface& new_su
+         vulkan_surface_create_result = ifn.vkCreateWin32SurfaceKHR(
+             instance, &surface_create_info, nullptr, &paint_context_.vulkan_surface);
+       } break;
++#endif
++#if REX_PLATFORM_MAC
++      case Surface::kTypeIndex_SdlWindow: {
++        auto& sdl_window_surface = static_cast<const SdlWindowSurface&>(new_surface);
++        vulkan_surface_create_result =
++            SDL_Vulkan_CreateSurface(sdl_window_surface.window(), instance, nullptr,
++                                     &paint_context_.vulkan_surface)
++                ? VK_SUCCESS
++                : VK_ERROR_INITIALIZATION_FAILED;
++      } break;
+ #endif
+       default:
+         assert_unhandled_case(surface_type);
+diff --git a/src/ui/window_sdl.cpp b/src/ui/window_sdl.cpp
+index c37e5509d971d455aa720aad25dda9bc649c5682..187002b811b9858a8c2630f3a43ce1c28fda935d 100644
+--- a/src/ui/window_sdl.cpp
++++ b/src/ui/window_sdl.cpp
+@@ -29,9 +29,11 @@
+ 
+ #if REX_PLATFORM_WIN32
+ #include <rex/ui/surface_win.h>
+-#else
++#elif REX_PLATFORM_GNU_LINUX
+ #include <X11/Xlib-xcb.h>
+ #include <rex/ui/surface_gnulinux.h>
++#elif REX_PLATFORM_MAC
++#include <rex/ui/surface_sdl.h>
+ #endif
+ 
+ namespace rex::ui {
+@@ -130,6 +132,9 @@ WindowSDL::~WindowSDL() {
+ bool WindowSDL::OpenImpl() {
+   // SDL window coordinates are physical pixels on Windows and X11.
+   SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN;
++#if REX_PLATFORM_MAC
++  flags |= SDL_WINDOW_VULKAN;
++#endif
+   sdl_window_ = SDL_CreateWindow(GetTitle().c_str(), int(SizeToPhysical(GetDesiredLogicalWidth())),
+                                  int(SizeToPhysical(GetDesiredLogicalHeight())), flags);
+   if (!sdl_window_) {
+@@ -311,7 +316,7 @@ std::unique_ptr<Surface> WindowSDL::CreateSurfaceImpl(Surface::TypeFlags allowed
+       return std::make_unique<Win32HwndSurface>(hinstance, hwnd);
+     }
+   }
+-#else
++#elif REX_PLATFORM_GNU_LINUX
+   if (allowed_types & Surface::kTypeFlag_XcbWindow) {
+     auto* display = static_cast<Display*>(
+         SDL_GetPointerProperty(props, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr));
+@@ -321,6 +326,10 @@ std::unique_ptr<Surface> WindowSDL::CreateSurfaceImpl(Surface::TypeFlags allowed
+       return std::make_unique<XcbWindowSurface>(XGetXCBConnection(display), x11_window);
+     }
+   }
++#elif REX_PLATFORM_MAC
++  if (allowed_types & Surface::kTypeFlag_SdlWindow) {
++    return std::make_unique<SdlWindowSurface>(sdl_window_);
++  }
+ #endif
+   return nullptr;
+ }
+diff --git a/src/ui/windowed_app_context_sdl.cpp b/src/ui/windowed_app_context_sdl.cpp
+index 0fa0974fc632cb386439a941e58b30bb10e44184..a35565daaff61188959c8d75d7c348550e78c5fb 100644
+--- a/src/ui/windowed_app_context_sdl.cpp
++++ b/src/ui/windowed_app_context_sdl.cpp
+@@ -31,7 +31,7 @@ SDLWindowedAppContext::~SDLWindowedAppContext() {
+ }
+ 
+ bool SDLWindowedAppContext::Initialize() {
+-#if !REX_PLATFORM_WIN32
++#if REX_PLATFORM_GNU_LINUX
+   // The Surface types the presenters consume are Win32Hwnd and XcbWindow;
+   // force X11 so an xcb connection is retrievable (there is no Wayland
+   // surface type).
+diff --git a/thirdparty/CMakeLists.txt b/thirdparty/CMakeLists.txt
+index 3cc4e220269b475802ba4bd9ef33bff7ff431c92..7d6b21a00d3f9843afd28f65ac9873ee6fbf8272 100644
+--- a/thirdparty/CMakeLists.txt
++++ b/thirdparty/CMakeLists.txt
+@@ -5,10 +5,16 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+ #=============================================================================
+ # Architecture detection
+ #=============================================================================
++if(APPLE AND CMAKE_OSX_ARCHITECTURES AND NOT CMAKE_OSX_ARCHITECTURES MATCHES ";")
++    # CMake may report the host processor rather than the architecture selected
++    # for an Apple build. Keep third-party assembly selection on the target.
++    set(CMAKE_SYSTEM_PROCESSOR "${CMAKE_OSX_ARCHITECTURES}")
++endif()
++
+ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+     set(IS_ARM64 FALSE)
+     set(IS_X86_64 TRUE)
+-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|ARM64)$")
++elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
+     set(IS_ARM64 TRUE)
+     set(IS_X86_64 FALSE)
+ else()
+@@ -260,8 +266,13 @@ set(SDL_CAMERA OFF CACHE BOOL "" FORCE)
+ # Disable graphics APIs (unused without video)
+ set(SDL_OPENGL OFF CACHE BOOL "" FORCE)
+ set(SDL_OPENGLES OFF CACHE BOOL "" FORCE)
+-set(SDL_VULKAN OFF CACHE BOOL "" FORCE)
+-set(SDL_METAL OFF CACHE BOOL "" FORCE)
++if(APPLE)
++    set(SDL_VULKAN ON CACHE BOOL "" FORCE)
++    set(SDL_METAL ON CACHE BOOL "" FORCE)
++else()
++    set(SDL_VULKAN OFF CACHE BOOL "" FORCE)
++    set(SDL_METAL OFF CACHE BOOL "" FORCE)
++endif()
+ 
+ # Disable dummy drivers
+ set(SDL_DISKAUDIO OFF CACHE BOOL "" FORCE)
+diff --git a/thirdparty/crypto/sha256.cpp b/thirdparty/crypto/sha256.cpp
+index f63fb2af1a44f9f49f6b5bc13c11367f7b4e330c..4cd071325c6a4e4783fb0b7d80143b3261da6710 100644
+--- a/thirdparty/crypto/sha256.cpp
++++ b/thirdparty/crypto/sha256.cpp
+@@ -8,7 +8,7 @@
+ #include "sha256.h"
+ 
+ // big endian architectures need #define __BYTE_ORDER __BIG_ENDIAN
+-#ifndef _MSC_VER
++#if !defined(_MSC_VER) && !defined(__APPLE__)
+ #include <endian.h>
+ #endif
+ 
+@@ -573,4 +573,4 @@ std::string SHA256::operator()(const std::string& text) {
+   return getHash();
+ }
+ 
+-}
+\ No newline at end of file
++}
+diff --git a/thirdparty/renderdoc/renderdoc_app.h b/thirdparty/renderdoc/renderdoc_app.h
+index da323e9a2869effb90943e418bb21ef6a4894dd2..1c48bba9f4cae56258a48f31c3cdbed878677c77 100644
+--- a/thirdparty/renderdoc/renderdoc_app.h
++++ b/thirdparty/renderdoc/renderdoc_app.h
+@@ -30,7 +30,7 @@
+ 
+ #if defined(WIN32) || defined(_WIN32)
+ 	#define RENDERDOC_CC __cdecl
+-#elif defined(__linux__)
++#elif defined(__linux__) || defined(__APPLE__)
+ 	#define RENDERDOC_CC
+ #else
+ 	#error "Unknown platform"

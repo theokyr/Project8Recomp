@@ -1,0 +1,304 @@
+/* base.rcss - the launcher's own baseline.
+ *
+ * RmlUi ships a 62-line default stylesheet that sets `display` on about a dozen
+ * tags and italic/bold on em/strong. That is the whole of it: no margins, no
+ * sizes, no colours, no box model. Every browser habit assumes a user-agent
+ * stylesheet that does not exist here, which is why this file starts from zero
+ * rather than overriding anything.
+ *
+ * Written against RmlUi 5888744, which registers 97 longhand properties and 20
+ * shorthands. Things that do NOT exist and must never appear below:
+ *   - border-style. `border: 1dp solid #fff` cannot parse; `solid` is not a
+ *     token. The shorthand is width + colour only.
+ *   - grid. justify-content exists; justify-items and justify-self do not.
+ *   - color-mix(), filter: drop-shadow(), 8-digit #RRGGBBAA hex.
+ * Alpha is the fourth argument of rgba() on a 0-255 scale.
+ */
+
+/* --- reset ---------------------------------------------------------------- */
+
+body {
+	width: 100%;
+	height: 100%;
+	margin: 0;
+	padding: 0;
+	font-family: "Noto Sans";
+	font-weight: normal;
+	font-size: 18dp;
+	line-height: 1.4;
+	color: #f4f6fa;
+	background-color: #0c121c;
+}
+
+div, header, footer, section, main, h1, h2, p {
+	display: block;
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+}
+
+span, em, strong { display: inline; }
+em { font-style: italic; }
+strong { font-weight: bold; }
+
+h1 { font-size: 40dp; font-weight: bold; line-height: 1.05; }
+h2 { font-size: 22dp; font-weight: bold; line-height: 1.2; }
+
+/* --- layout --------------------------------------------------------------- */
+
+.screen {
+	display: flex;
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 40dp;
+}
+
+.card {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	max-width: 780dp;
+	padding: 36dp;
+	gap: 22dp;
+	border: 2dp rgba(176, 190, 210, 70);
+	border-radius: 20dp;
+	background-color: rgba(18, 26, 40, 250);
+}
+
+.row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 14dp;
+}
+
+.actions {
+	display: flex;
+	flex-direction: row;
+	gap: 14dp;
+}
+
+.spacer { flex: 1 1 0dp; }
+
+/* --- identity ------------------------------------------------------------- */
+
+.wordmark { display: block; }
+.wordmark .line1 { color: #ffffff; letter-spacing: 1dp; }
+.wordmark .line2 { color: #ff6a1f; letter-spacing: 1dp; }
+
+/* `gap` on .card spaces its flex children, but header's own children are block
+ * boxes inside one flex item, so they need real margin. */
+.subtitle {
+	margin-top: 10dp;
+	color: rgba(244, 246, 250, 165);
+	font-size: 16dp;
+}
+
+/* --- status pill: a sentence, never a bare dot ---------------------------- */
+
+.pill {
+	display: inline-block;
+	padding: 7dp 14dp;
+	border: 1dp rgba(176, 190, 210, 80);
+	border-radius: 999dp;
+	font-size: 14dp;
+	font-weight: bold;
+	color: rgba(244, 246, 250, 220);
+	background-color: rgba(40, 52, 72, 220);
+}
+
+.pill.ready {
+	color: #0c121c;
+	border-color: #3ee08a;
+	background-color: #3ee08a;
+}
+
+.pill.blocked {
+	color: #0c121c;
+	border-color: #ffb020;
+	background-color: #ffb020;
+}
+
+/* --- controls ------------------------------------------------------------- */
+
+button {
+	display: block;
+	box-sizing: border-box;
+	min-height: 54dp;
+	padding: 14dp 22dp;
+	border: 2dp rgba(176, 190, 210, 110);
+	border-radius: 12dp;
+	font-family: "Noto Sans";
+	font-size: 18dp;
+	font-weight: bold;
+	color: #f4f6fa;
+	background-color: rgba(30, 42, 60, 240);
+	text-align: center;
+	tab-index: auto;
+	nav: auto;
+	cursor: pointer;
+	transition: background-color border-color 0.12s linear-in-out;
+}
+
+button:hover { background-color: rgba(44, 60, 84, 255); }
+button:active { background-color: rgba(22, 32, 48, 255); }
+
+/* The focus ring has to read from a couch, so it is a colour change and a
+ * border, not a 1dp outline. */
+button:focus {
+	border-color: #ffffff;
+	background-color: rgba(54, 74, 104, 255);
+}
+
+button.primary {
+	color: #0c121c;
+	border-color: #ff6a1f;
+	background-color: #ff6a1f;
+}
+
+button.primary:hover { background-color: #ff8342; }
+button.primary:focus { border-color: #ffffff; background-color: #ff8342; }
+
+button.ghost {
+	font-weight: normal;
+	background-color: rgba(30, 42, 60, 120);
+}
+
+/* --- progress bar ---------------------------------------------------------
+ * RmlUi's <progress> renders two boxes: the element itself, and an implicit
+ * `fill` child that it sizes from `value` (0..1). The fill is NOT visible by
+ * default - it has no background of its own - which is the whole reason a
+ * progress element can look like it is doing nothing while working correctly.
+ *
+ * `fill-image` is the documented way to skin it; a plain background-color on
+ * `progress fill` is enough here and costs no asset.
+ */
+
+.bar {
+	display: block;
+	box-sizing: border-box;
+	width: 100%;
+	height: 18dp;
+	border: 1dp rgba(176, 190, 210, 90);
+	border-radius: 999dp;
+	background-color: rgba(8, 12, 20, 220);
+}
+
+.bar fill {
+	height: 100%;
+	border-radius: 999dp;
+	background-color: #ff6a1f;
+}
+
+/* --- settings rows -------------------------------------------------------- */
+
+.setting-row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 14dp;
+	width: 100%;
+}
+
+.setting-label {
+	display: inline-block;
+	font-weight: bold;
+}
+
+/* Wide enough that cycling between "Game default" and "720p" does not make the
+ * row jump, which reads as the layout breaking rather than the value changing.
+ *
+ * Shorter than a standalone button: four of these stack, and the 54dp used
+ * elsewhere is sized for a control sitting on its own. */
+.setting-value {
+	min-width: 300dp;
+	min-height: 44dp;
+	padding: 9dp 18dp;
+	text-align: right;
+}
+
+/* --- footer --------------------------------------------------------------- */
+
+.footer {
+	color: rgba(244, 246, 250, 120);
+	font-size: 13dp;
+}
+
+/* --- state gating ---------------------------------------------------------
+ * One class on the document element decides which panel is visible. This is
+ * the whole mechanism: no element hides itself, and no two elements can
+ * disagree about which state the launcher is in.
+ */
+
+.panel { display: none; }
+.panel.actions { flex-direction: row; gap: 14dp; }
+
+body.st-welcome .panel-welcome,
+body.st-picking .panel-welcome   { display: flex; }
+
+body.st-verifying .panel-progress,
+body.st-extracting .panel-progress,
+body.st-starting .panel-progress { display: flex; }
+
+/* The progress panel stacks: bar, then the reading, then Stop. Only .actions
+ * inside it runs as a row. */
+.panel-progress { flex-direction: column; gap: 14dp; }
+
+/* Stop belongs only to the copy. Verifying takes ~58 ms - a button nobody could
+ * hit, and handing off to the game is not something to interrupt halfway. */
+.panel-cancel { display: none; }
+body.st-extracting .panel-cancel { display: flex; }
+
+body.st-done .panel-done         { display: flex; }
+body.st-fail .panel-fail         { display: flex; }
+body.st-ready .panel-ready       { display: flex; }
+body.st-debris .panel-debris     { display: flex; }
+body.st-blocked .panel-blocked   { display: flex; }
+
+/* Sub-screens of home. Columns, not rows: each is a stack of rows or
+ * paragraphs with its own Back at the bottom.
+ *
+ * The gap is 10dp rather than the 16dp the other panels use because the
+ * settings panel is the tallest thing in the program: four rows, a note and a
+ * button. At 16dp with the shared 54dp control height it ran past the bottom of
+ * a 720p window and clipped its own Back button. */
+body.st-settings .panel-settings { display: flex; flex-direction: column; gap: 10dp; }
+body.st-about .panel-about       { display: flex; flex-direction: column; gap: 16dp; }
+
+/* The heading line duplicates what the note at the bottom already says, so it
+ * is hidden here rather than deleted - every other state still wants it. */
+body.st-settings #detail { display: none; }
+
+/* Belt and braces for the case this stylesheet cannot predict: a display scale
+ * above 1, or a user resizing the window smaller than the card. Without this a
+ * control can end up unreachable, which is worse than a scrollbar. */
+.screen { overflow-y: auto; }
+
+/* The chosen file is only meaningful once something has been chosen. */
+.panel-path { display: none; }
+body.st-verifying .panel-path,
+body.st-extracting .panel-path,
+body.st-fail .panel-path { display: block; }
+
+.path {
+	padding: 10dp 14dp;
+	border-radius: 8dp;
+	font-size: 14dp;
+	color: rgba(244, 246, 250, 190);
+	background-color: rgba(8, 12, 20, 220);
+}
+
+/* A failure is not decoration: the pill and the heading both carry it. */
+body.st-fail #status_pill,
+body.st-debris #status_pill,
+body.st-blocked #status_pill {
+	color: #0c121c;
+	border-color: #ffb020;
+	background-color: #ffb020;
+}

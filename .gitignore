@@ -1,0 +1,43 @@
+# Build output
+build/
+out/
+.sdl3-prefix/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Recompiler output. This is a translation of the user's own game executable
+# and is regenerated locally; it must never be committed.
+generated/
+*thps_p8_recomp.*.cpp
+*_init.cpp
+
+# Anything from a disc
+*.iso
+*.img
+*.xex
+*.xzp
+*.pak
+*.bik
+*.bik.xen
+*.xma
+*.fsb
+DATA/
+game/
+
+# A local install
+saves/
+logs/
+config/install.toml
+config/settings.toml
+config/*.local.toml
+
+__pycache__/
+.DS_Store
+compile_commands.json
+
+# Release staging output
+dist/

@@ -1,0 +1,15 @@
+Noto Sans (Regular, SemiBold, Bold)
+
+Copyright the Noto Project Authors.
+Upstream: https://github.com/notofonts/latin-greek-cyrillic
+
+Licensed under the SIL Open Font License, Version 1.1.
+Full text: https://openfontlicense.org/
+
+Taken from this machine's system font package on 2026-08-02. OFL-1.1 permits
+redistribution, including inside a bundled application, provided this notice
+travels with the font files and they are not sold on their own. Both conditions
+are met by shipping this file alongside the .ttf files in the same directory.
+
+Recorded in docs/policies/dependency-licences.md as a shipped asset, not a
+build-time dependency: these files reach the user.

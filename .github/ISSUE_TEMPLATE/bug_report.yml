@@ -1,0 +1,66 @@
+name: Bug report
+description: Something does not work
+labels: [needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not attach game files, disc images, or `default.xex`**, and do not
+        ask where to obtain the game — those issues are closed without an answer.
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux (x86_64)
+        - macOS (Apple Silicon)
+        - Windows (experimental)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "e.g. v0.1.0, or a commit hash if you built it yourself"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - Launcher — first-run setup
+        - Launcher — everything else
+        - The game itself
+        - Building from source
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Terminal output, and anything in the `logs/` folder.
+      render: shell
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirm
+      options:
+        - label: I have read docs/KNOWN_ISSUES.md.
+          required: true
+        - label: This report contains no game files, disc images, or game assets.
+          required: true

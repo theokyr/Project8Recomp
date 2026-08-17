@@ -1,0 +1,12 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Adding support for another regional disc
+    url: https://github.com/theokyr/Project8Recomp/blob/main/docs/SETUP.md
+    about: >
+      Send the SHA-256 and size of your disc's default.xex, not the file. See
+      docs/SETUP.md.
+  - name: Where do I get the game?
+    url: https://github.com/theokyr/Project8Recomp/blob/main/docs/SETUP.md
+    about: >
+      Nowhere we will tell you. You need your own copy; these issues are closed
+      without an answer.

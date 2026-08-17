@@ -1,0 +1,195 @@
+# ReXGlue codegen manifest for Tony Hawk's Project 8 (Xbox 360).
+#
+# THIS CONFIGURATION REACHES IN-GAME: title screen, menus, FMV playback,
+# real-time 3D rendering and audio, with saves written to XDG data.
+# Verified 2026-07-30 against rexglue-sdk 0.8.0 prebuilt, clang 22.1.6, RTX 3060.
+#
+# Substitute your own dump path for REPLACE_ME. The image and the extracted
+# disc are the owner's own material and live in ignored paths.
+#
+# Run it with:
+#   LD_LIBRARY_PATH=<sdk>/lib ./thps_p8 --game_data_root=<extracted disc> \
+#     --mnk_mode=true --log_file=run.log --log_level=info
+# --mnk_mode=true is REQUIRED: keyboard input is registered but disabled by
+# default, so without it every key silently does nothing. START is Escape.
+#
+# TRAP: [functions] MUST be nested as [entrypoint.functions]. A top-level
+# table is parsed as a sibling of [project] and SILENTLY IGNORED - codegen
+# then emits byte-identical UnresolvedCall errors, which reads like the
+# addresses being wrong rather than the TOML being misplaced.
+
+[project]
+name = "thps_p8"
+sdk_version = "0.8.0"
+game_root = "REPLACE_ME/sources/install-media/derived/disc"
+
+[entrypoint]
+file_path = "REPLACE_ME/sources/install-media/derived/disc/default.xex"
+out_directory_path = "../generated/default"  # relative to THIS file; ../generated is gitignored
+includes = []
+
+# Register-localization codegen flags. In-game profiling (2026-07-30) showed
+# gameplay is bound by a single guest thread at 99% of one host core while all
+# GPU/audio threads idle near 10%, so keeping guest registers in C++ locals
+# instead of the guest context struct is the highest-leverage speedup lead.
+#
+# ALL CURRENTLY OFF. First attempt (2026-07-30) enabled ctr_as_local,
+# xer_as_local, cr_as_local, reserved_as_local and non_argument_as_local
+# together and the build died with SIGBUS ~14 s after launch, right after
+# pipeline-cache warmup. Bisect one flag at a time before re-enabling any.
+# skip_lr, skip_msr and non_volatile_as_local are additionally gated on the
+# setjmp/longjmp question: longjmp restores non-volatile registers from the
+# jmp_buf, and localizing them desynchronizes that path. setjmp is
+# corroborated at 0x82630550; the longjmp lead (0x826307A0) is unverified -
+# see facts/upstream-p8-config-claims.md.
+#ctr_as_local = true
+#xer_as_local = true
+#cr_as_local = true
+#reserved_as_local = true
+#non_argument_as_local = true
+
+# Tail-call targets the analyser reached via unconditional 'b' but never
+# discovered as function starts. Measured from this project's own codegen
+# Validate phase: 10 UnresolvedCall errors over 9 unique targets.
+[entrypoint.functions]
+0x822FDCC8 = {}
+0x822FDDC0 = {}
+0x822FDF98 = {}
+0x822FDFD8 = {}
+0x822FDFE8 = {}
+0x822FDFF8 = {}
+0x8230A318 = {}
+0x824182E0 = {}
+0x824213E8 = {}
+0x82412038 = {}  # vtable 0x8202D098 slot 5; found by boot trap
+
+# Batch vtable/code-pointer scan: every big-endian, 4-byte-aligned value in the
+# image's DATA regions that lands inside the combined code span and was not
+# already a recompiled function start. 21,421 distinct code pointers found;
+# these 160 were missing. Clears the whole missed-indirect-target class at once
+# instead of one crash per rebuild.
+0x820B7970 = {}
+0x821F10B8 = {}
+0x8222A0E8 = {}
+0x82290A40 = {}
+0x822FE008 = {}
+0x8230E9C8 = {}
+0x8232AFB8 = {}
+0x8233C684 = {}
+0x82346738 = {}
+0x8237B458 = {}
+0x823AC158 = { end = 0x823AC318 }
+0x823CA828 = {}
+0x824172D0 = {}
+0x82417780 = {}
+0x8241F760 = {}
+0x8241F798 = {}
+0x82421788 = {}
+0x824217B0 = {}
+0x824217B8 = {}
+0x824217C8 = {}
+0x824217E0 = {}
+0x824354D0 = {}
+0x824A2B00 = {}
+0x824A2D30 = {}
+0x824FD4A8 = {}
+0x824FF358 = {}
+0x824FFAF8 = {}
+0x82607D70 = {}
+0x8260D0C0 = {}
+0x8260D7A0 = {}
+0x826213C8 = {}
+0x8262BC00 = {}
+0x8262BC50 = {}
+0x8262C780 = {}
+0x8262C7CC = {}
+0x826315A0 = {}
+0x82631838 = {}
+
+# Remaining upstream-lead addresses, all of the mid-function-entry class that
+# neither the data-pointer nor the lis/ori scan can find. 0x822B53A8 was
+# confirmed by ResolveIndirectFunction at run 4 and lies inside sub_822B5390.
+0x822B53A8 = {}
+0x822B53C0 = {}
+0x8247A708 = {}
+0x8247A720 = {}
+0x826307A0 = {}
+
+# Parent-extent assertions (2026-07-31). 126 of the original 178 forced
+# entries were MID-FUNCTION addresses per the image's own .pdata unwind
+# table (exception scope-table / continuation pointers found by the batch
+# data scan). Forcing them split ~70 parent functions, turning internal
+# branches into cross-function jumps - survivable with context-struct
+# registers, fatal under register localization (disproved.md D14). Assert
+# the pdata extents instead so every such block stays internal. If any of
+# these addresses is ever truly entered indirectly at runtime, the runtime
+# FATAL will name it - re-add that one specifically.
+0x82090068 = { end = 0x82090494 }
+0x820BA2E0 = { end = 0x820BACC4 }
+0x820C3998 = { end = 0x820C4340 }
+0x820F5DC0 = { end = 0x820F6978 }
+0x82103E10 = { end = 0x821046F4 }
+0x82111C00 = { end = 0x82112AE4 }
+0x8211C2B0 = { end = 0x8211C5D0 }
+0x8214C3A8 = { end = 0x8214C44C }
+0x8217AEE8 = { end = 0x8217B0B0 }
+0x8217E7B8 = { end = 0x8217E97C }
+0x8218E0B0 = { end = 0x8218E45C }
+0x82204838 = { end = 0x82206670 }
+0x8220D840 = { end = 0x8220D9C4 }
+0x82238208 = { end = 0x822383EC }
+0x822762B8 = { end = 0x82277504 }
+0x82313FD8 = { end = 0x82314118 }
+0x82317E98 = { end = 0x82318434 }
+0x82364998 = { end = 0x82365760 }
+0x823AD5B0 = { end = 0x823AD610 }
+0x823AEE20 = { end = 0x823AF3B8 }
+0x823AF3D0 = { end = 0x823AFC3C }
+0x823AFCB8 = { end = 0x823AFF24 }
+0x823AFFA0 = { end = 0x823B07BC }
+0x823ECBA0 = { end = 0x823ED1B4 }
+0x82408750 = { end = 0x82408874 }
+0x8240A950 = { end = 0x8240AA10 }
+0x82414BD0 = { end = 0x82414E68 }
+0x8246A468 = { end = 0x8246A660 }
+0x824809F0 = { end = 0x82480EA8 }
+0x82482768 = { end = 0x82482838 }
+0x824FD2A0 = { end = 0x824FD390 }
+0x82501E30 = { end = 0x82502228 }
+0x8250C8F0 = { end = 0x8250CA44 }
+0x82529690 = { end = 0x8252AA24 }
+0x8259D4C8 = { end = 0x8259D994 }
+0x8260C3C0 = { end = 0x8260CE14 }
+0x82620318 = { end = 0x82620E58 }
+0x8262BFB0 = { end = 0x8262C094 }
+0x8262D4C8 = { end = 0x8262D660 }
+0x8262D838 = { end = 0x8262D8FC }
+0x8262D960 = { end = 0x8262DA98 }
+0x8262DEE0 = { end = 0x8262DFE0 }
+0x8262ED50 = { end = 0x8262EE14 }
+0x82630CA8 = { end = 0x82630DCC }
+0x82630F18 = { end = 0x82630FCC }
+0x826310E8 = { end = 0x826313A8 }
+0x82631F38 = { end = 0x82631FDC }
+0x82632150 = { end = 0x82632274 }
+0x82632330 = { end = 0x826323CC }
+0x826325E0 = { end = 0x826326D0 }
+0x82635CE0 = { end = 0x82635F84 }
+0x82636468 = { end = 0x82636588 }
+0x826369F8 = { end = 0x82636B70 }
+0x82637860 = { end = 0x82637954 }
+0x82637A08 = { end = 0x82637A54 }
+0x82637AB8 = { end = 0x82637B44 }
+0x82637E20 = { end = 0x82637F5C }
+0x82638818 = { end = 0x82638954 }
+0x82638A70 = { end = 0x82638BAC }
+0x82639080 = { end = 0x8263915C }
+0x826396F8 = { end = 0x82639800 }
+0x826398D0 = { end = 0x82639974 }
+0x826399A0 = { end = 0x82639AD0 }
+0x8263A148 = { end = 0x8263A288 }
+0x8263A4D8 = { end = 0x8263A598 }
+0x8263A7B8 = { end = 0x8263A880 }
+0x8263A8E8 = { end = 0x8263AB00 }
+0x826901B0 = { end = 0x82690214 }
+0x826AB540 = { end = 0x826AB5A4 }

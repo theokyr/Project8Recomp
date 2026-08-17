@@ -1,0 +1,51 @@
+diff --git a/src/graphics/graphics_system.cpp b/src/graphics/graphics_system.cpp
+index 3877b1a..6af0cba 100644
+--- a/src/graphics/graphics_system.cpp
++++ b/src/graphics/graphics_system.cpp
+@@ -9,6 +9,8 @@
+  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
+  */
+ 
++#include <chrono>
++#include <thread>
+ #include <rex/graphics/graphics_system.h>
+ 
+ #include <algorithm>
+@@ -161,16 +163,32 @@ X_STATUS GraphicsSystem::SetupGuestGpu(runtime::FunctionDispatcher* function_dis
+         uint64_t vsync_interval_ticks =
+             std::max(uint64_t(1), uint64_t(double(guest_tick_frequency) / refresh_rate_hz));
+         uint64_t no_vsync_interval_ticks = std::max(uint64_t(1), guest_tick_frequency / 1000);
++        // Precise vblank scheduling: the 1 ms poll loop this replaces made
++        // every vblank up to 1 ms late and delivered oversleep as bursts of
++        // back-to-back interrupts; frames finishing near the deadline then
++        // slipped a whole vblank. Sleep to the absolute next edge instead.
+         uint64_t last_frame_time = chrono::Clock::QueryGuestTickCount();
++        auto next_wake = std::chrono::steady_clock::now();
+         while (vsync_worker_running_) {
++          bool vsync_on = REXCVAR_GET(vsync);
++          uint64_t interval_ticks = vsync_on ? vsync_interval_ticks : no_vsync_interval_ticks;
++          auto host_interval = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
++              std::chrono::duration<double>(vsync_on ? 1.0 / refresh_rate_hz : 0.001));
++          next_wake += host_interval;
++          auto now = std::chrono::steady_clock::now();
++          if (next_wake < now - 4 * host_interval) {
++            next_wake = now;  // fell far behind (suspend/debugger): resync, no burst
++          }
++          if (next_wake > now) {
++            std::this_thread::sleep_until(next_wake);
++          }
+           uint64_t current_time = chrono::Clock::QueryGuestTickCount();
+-          uint64_t interval_ticks =
+-              REXCVAR_GET(vsync) ? vsync_interval_ticks : no_vsync_interval_ticks;
+-          while (current_time - last_frame_time >= interval_ticks) {
++          if (current_time - last_frame_time >= interval_ticks) {
+             MarkVblank();
+-            last_frame_time += interval_ticks;
++            // Track guest time without accumulating drift, but never burst.
++            uint64_t behind = (current_time - last_frame_time) / interval_ticks;
++            last_frame_time += behind * interval_ticks;
+           }
+-          rex::thread::Sleep(std::chrono::milliseconds(1));
+         }
+         return 0;
+       }));

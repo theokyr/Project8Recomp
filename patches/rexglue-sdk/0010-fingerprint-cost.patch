@@ -1,0 +1,247 @@
+diff --git a/include/rex/graphics/flags.h b/include/rex/graphics/flags.h
+index a91ffd1..6c81128 100644
+--- a/include/rex/graphics/flags.h
++++ b/include/rex/graphics/flags.h
+@@ -80,6 +80,7 @@ REXCVAR_DECLARE(bool, gpu_native_vertex);
+ REXCVAR_DECLARE(bool, gpu_native_dedup);
+ REXCVAR_DECLARE(bool, gpu_native_verify);
+ REXCVAR_DECLARE(uint32_t, gpu_native_hash_max_bytes);
++REXCVAR_DECLARE(uint32_t, gpu_native_hash_min_bytes);
+ REXCVAR_DECLARE(bool, gpu_native_stats);
+ REXCVAR_DECLARE(bool, gpu_native_suppress_draws);
+ 
+diff --git a/src/graphics/flags.cpp b/src/graphics/flags.cpp
+index 3b06fbb..a5ec972 100644
+--- a/src/graphics/flags.cpp
++++ b/src/graphics/flags.cpp
+@@ -69,6 +69,28 @@ REXCVAR_DEFINE_UINT32(gpu_native_hash_max_bytes, 16777216, "GPU",
+                       "Ranges larger than this take the emulated path instead of being "
+                       "hashed and copied")
+     .lifecycle(rex::cvar::Lifecycle::kHotReload);
++// The other end of the same axis, and the one that decides whether a range is
++// fingerprinted at all rather than whether this path owns it. A range shorter
++// than this is made resident by copying it every frame with no fingerprint:
++// still deduplicated within a frame by the epoch stamp, still invalidated by
++// the buffer's page write sequence, still refused over a resolve destination -
++// only the cross-frame "have these bytes changed" compare is dropped, and the
++// copy that compare would have skipped is done unconditionally instead. That is
++// correct by construction, because the bytes copied are the same bytes the
++// emulated path would have uploaded. Worth doing wherever the fingerprint
++// rarely saves a copy: measured on this title's idle frames, hashing 3.4 MB
++// prevented under 1 MB of uploads.
++//
++// Default 0 means no range qualifies, so an unconfigured run hashes exactly
++// what it hashed before this cvar existed. Setting it above
++// gpu_native_hash_max_bytes makes every range this path owns copy-always.
++// gpu_native_verify overrides it to 0 for the frames it is set, so the oracle
++// always has fingerprints to compare.
++REXCVAR_DEFINE_UINT32(gpu_native_hash_min_bytes, 0, "GPU",
++                      "Ranges smaller than this are copied every frame instead of being "
++                      "fingerprinted (0 = fingerprint everything; above "
++                      "gpu_native_hash_max_bytes = never fingerprint)")
++    .lifecycle(rex::cvar::Lifecycle::kHotReload);
+ REXCVAR_DEFINE_BOOL(gpu_native_stats, false, "GPU",
+                     "Collect and log native-residency telemetry: per-frame CP drain, "
+                     "unique vertex bytes, shared page overlaps, resolve destinations")
+diff --git a/src/graphics/vulkan/native_residency.h b/src/graphics/vulkan/native_residency.h
+index ed7ff53..d11ec9d 100644
+--- a/src/graphics/vulkan/native_residency.h
++++ b/src/graphics/vulkan/native_residency.h
+@@ -87,6 +87,14 @@ class NativeResidency {
+   // buffer without arming a write watch for it, by fingerprinting the guest
+   // bytes and copying them in when the fingerprint has moved.
+   //
++  // A range shorter than gpu_native_hash_min_bytes skips the fingerprint and is
++  // copied in on every request that the epoch stamp does not already satisfy.
++  // Nothing else about it changes: it is still deduplicated within a frame,
++  // still invalidated by the buffer's write sequence, still refused over a
++  // resolve destination. Copying current guest bytes is what the emulated path
++  // does, so dropping the compare cannot make anything stale - it can only make
++  // this path copy where it would have proved a copy unnecessary.
++  //
+   // Returns false for any range this path refuses to own - one that intersects
+   // a resolve destination, one larger than gpu_native_hash_max_bytes, one out
+   // of bounds, or one whose copy could not be staged. The caller must then
+@@ -158,8 +166,15 @@ class NativeResidency {
+   static constexpr uint32_t kVerifyWarningLimit = 32;
+ 
+   struct Entry {
+-    // XXH3 of the guest bytes as of the last time they were copied in.
++    // XXH3 of the guest bytes as of the last time they were copied in. Only
++    // meaningful while hash_valid says it was taken.
+     uint64_t hash;
++    // Whether `hash` holds a fingerprint at all. Ranges below
++    // gpu_native_hash_min_bytes are made resident without being hashed, so
++    // their entry carries an epoch and an upload sequence but no fingerprint,
++    // and must never be compared against one. Kept as its own flag rather than
++    // inferred from hash == 0, which XXH3 can legitimately return.
++    bool hash_valid;
+     // Frame epoch this range was last made resident in.
+     uint64_t last_epoch;
+     // The shared memory buffer's page write sequence at the moment this range
+@@ -190,10 +205,12 @@ class NativeResidency {
+     return RangeKey(start, length) | kConversionSourceKeyBit;
+   }
+ 
+-  // Copies the range in and updates its entry. Returns false if the copy could
++  // Copies the range in and updates its entry. `hash_valid` says whether
++  // `hash` is a fingerprint of the bytes being copied or a placeholder for a
++  // range this frame chose not to fingerprint. Returns false if the copy could
+   // not be staged, in which case the entry is left saying nothing is resident.
+   bool UploadRange(memory::Memory& memory, SharedMemory& shared_memory, uint32_t start,
+-                   uint32_t length, uint64_t key, Entry& entry, uint64_t hash);
++                   uint32_t length, uint64_t key, Entry& entry, uint64_t hash, bool hash_valid);
+ 
+   uint64_t frame_epoch_ = 0;
+   bool native_frame_ = false;
+@@ -202,6 +219,9 @@ class NativeResidency {
+   bool dedup_frame_ = true;
+   bool verify_frame_ = false;
+   uint32_t hash_max_bytes_frame_ = 0;
++  // Latched like the rest, and forced to 0 whenever verify_frame_ is set so
++  // that the oracle never grades a frame that skipped its fingerprints.
++  uint32_t hash_min_bytes_frame_ = 0;
+   bool draw_index_residency_allowed_ = false;
+   bool draw_vertex_residency_allowed_ = false;
+   bool draw_used_native_ = false;
+diff --git a/src/graphics/vulkan/native_residency.cc b/src/graphics/vulkan/native_residency.cc
+index 5c1f12c..cce02b0 100644
+--- a/src/graphics/vulkan/native_residency.cc
++++ b/src/graphics/vulkan/native_residency.cc
+@@ -63,6 +63,11 @@ void NativeResidency::LatchFrameModeAtSwap() {
+   // emulated path must not change shape because a diagnostic cvar is set.
+   verify_frame_ = native_frame_ && REXCVAR_GET(gpu_native_verify);
+   hash_max_bytes_frame_ = REXCVAR_GET(gpu_native_hash_max_bytes);
++  // The oracle exists to compare fingerprints against the guest bytes, so a
++  // verify frame takes one for every range whatever the threshold says. That
++  // keeps the verify soak exactly as sensitive as it was before this knob, at
++  // any setting of it.
++  hash_min_bytes_frame_ = verify_frame_ ? 0 : REXCVAR_GET(gpu_native_hash_min_bytes);
+   // Draws are only ever issued between swaps, but leave no stale permission
+   // behind for a mode that has just been switched off.
+   draw_index_residency_allowed_ = false;
+@@ -135,7 +140,7 @@ bool NativeResidency::IntersectsResolveDestination(uint32_t start, uint32_t leng
+ 
+ bool NativeResidency::UploadRange(memory::Memory& memory, SharedMemory& shared_memory,
+                                   uint32_t start, uint32_t length, uint64_t key, Entry& entry,
+-                                  uint64_t hash) {
++                                  uint64_t hash, bool hash_valid) {
+   // Guest bytes verbatim, exactly as the emulated path uploads them: the
+   // shared memory buffer holds guest-endian data and the translated shaders
+   // swizzle what they fetch out of it. Swapping here would swap twice.
+@@ -149,6 +154,9 @@ bool NativeResidency::UploadRange(memory::Memory& memory, SharedMemory& shared_m
+     return false;
+   }
+   entry.hash = hash;
++  // An unfingerprinted range records no claim about guest memory at all, only
++  // that these bytes went into the buffer at this sequence in this frame.
++  entry.hash_valid = hash_valid;
+   entry.last_epoch = frame_epoch_;
+   // What guest memory held (hash) and what the buffer held (upload_seq) at the
+   // same instant. A hit needs both to still be true.
+@@ -176,23 +184,36 @@ bool NativeResidency::RequestRangeNative(memory::Memory& memory, SharedMemory& s
+     return false;
+   }
+ 
++  // Is this range worth fingerprinting? A fingerprint only ever buys the copy
++  // it lets us skip, and below the threshold that trade has been measured to
++  // lose: the range is copied in unconditionally instead, with no XXH3 taken
++  // and none believed. Everything else about the path is unaffected - the
++  // refusals above, the epoch dedup, the write-sequence invalidation below and
++  // the blacklist all behave identically, because copying the current guest
++  // bytes is exactly what the emulated path would have done with them. The
++  // oracle forces this to true (see LatchFrameModeAtSwap).
++  const bool hash_this = verify_frame_ || length >= hash_min_bytes_frame_;
++
+   uint64_t key = RangeKey(start, length);
+   if (!dedup_frame_) {
+     // Paranoia mode: no fingerprint is believed, every request copies. Nothing
+     // is recorded either, so that turning dedup back on starts from a clean
+     // table rather than from entries that were never maintained.
+     range_table_.erase(key);
+-    Entry scratch = {0, 0, 0, false};
+-    return UploadRange(memory, shared_memory, start, length, key, scratch, 0);
++    Entry scratch = {0, false, 0, 0, false};
++    return UploadRange(memory, shared_memory, start, length, key, scratch, 0, false);
+   }
+ 
+-  auto [it, inserted] = range_table_.try_emplace(key, Entry{0, 0, 0, false});
++  auto [it, inserted] = range_table_.try_emplace(key, Entry{0, false, 0, 0, false});
+   Entry& entry = it->second;
+   if (inserted || entry.blacklisted) {
+     // Never seen, or seen and caught lying by the verify oracle.
++    if (!hash_this) {
++      return UploadRange(memory, shared_memory, start, length, key, entry, 0, false);
++    }
+     PERF_counter_add(kNativeBytesHashed, length);
+     uint64_t hash = XXH3_64bits(memory.TranslatePhysical<const void*>(start), length);
+-    return UploadRange(memory, shared_memory, start, length, key, entry, hash);
++    return UploadRange(memory, shared_memory, start, length, key, entry, hash, true);
+   }
+ 
+   // Has anything been written into the buffer over this window since this
+@@ -219,8 +240,25 @@ bool NativeResidency::RequestRangeNative(memory::Memory& memory, SharedMemory& s
+     }
+   }
+ 
++  if (!hash_this) {
++    // Below the threshold: no fingerprint is taken and the entry's old one, if
++    // it has one, is not consulted - the range is simply made to hold what
++    // guest memory holds right now, which is the strongest thing the emulated
++    // path ever claims about it. Whatever the compare would have decided, this
++    // is at least as fresh.
++    return UploadRange(memory, shared_memory, start, length, key, entry, 0, false);
++  }
++
+   PERF_counter_add(kNativeBytesHashed, length);
+   uint64_t hash = XXH3_64bits(memory.TranslatePhysical<const void*>(start), length);
++  if (!entry.hash_valid) {
++    // The threshold was lowered under this entry, or the oracle was switched on
++    // over one born unfingerprinted. There is nothing to compare against, so
++    // copy and establish the fingerprint; a stale field must never be read as
++    // one, and none of the oracle's verdicts below can be reached from here
++    // because every one of them is a statement about a fingerprint that moved.
++    return UploadRange(memory, shared_memory, start, length, key, entry, hash, true);
++  }
+   if (hash == entry.hash && !clobbered) {
+     // Static geometry: one hash per frame, no copy.
+     entry.last_epoch = frame_epoch_;
+@@ -262,7 +300,7 @@ bool NativeResidency::RequestRangeNative(memory::Memory& memory, SharedMemory& s
+           "re-reading and re-uploading these ranges regardless");
+     }
+   }
+-  return UploadRange(memory, shared_memory, start, length, key, entry, hash);
++  return UploadRange(memory, shared_memory, start, length, key, entry, hash, true);
+ }
+ 
+ bool NativeResidency::MayFingerprintConversionSource(const void* guest_source, uint32_t start,
+@@ -314,8 +352,13 @@ bool NativeResidency::MayFingerprintConversionSource(const void* guest_source, u
+     PERF_counter_add(kNativeBytesHashed, length);
+     Entry& entry = (it != range_table_.end())
+                        ? it->second
+-                       : range_table_.try_emplace(key, Entry{0, 0, 0, false}).first->second;
++                       : range_table_.try_emplace(key, Entry{0, false, 0, 0, false}).first->second;
+     entry.hash = XXH3_64bits(guest_source, length);
++    // Conversion sources are outside gpu_native_hash_min_bytes: there is
++    // nothing to copy for one, so the fingerprint's alternative is re-arming
++    // the watch this replaced, not an unconditional copy. An entry on this key
++    // is therefore always fingerprinted.
++    entry.hash_valid = true;
+     entry.last_epoch = frame_epoch_;
+   }
+   NoteDrawNativeUsed();
+@@ -342,6 +385,14 @@ bool NativeResidency::IsConversionSourceUnchanged(const void* guest_source, uint
+     // even one cached before the blacklist was applied.
+     return false;
+   }
++  if (!it->second.hash_valid) {
++    // Unreachable while the key spaces stay apart - conversion source entries
++    // are always fingerprinted, see MayFingerprintConversionSource - and here
++    // so that the rule holds everywhere rather than by inspection: a hash field
++    // that was never filled in is not a fingerprint that happens to be zero,
++    // and must never be compared against one.
++    return true;
++  }
+   PERF_counter_add(kNativeBytesHashed, length);
+   if (XXH3_64bits(guest_source, length) == it->second.hash) {
+     return true;

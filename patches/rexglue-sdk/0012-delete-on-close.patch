@@ -1,0 +1,63 @@
+diff --git a/src/system/xfile.cpp b/src/system/xfile.cpp
+index 418f4b9..6dc89b7 100644
+--- a/src/system/xfile.cpp
++++ b/src/system/xfile.cpp
+@@ -37,7 +37,31 @@ XFile::XFile() : XObject(kObjectType) {
+ XFile::~XFile() {
+   // TODO(benvanik): signal that the file is closing?
+   async_event_->Set();
++
++  // NOTE(thps-p8 0012): honour delete-on-close.
++  // NtSetInformationFile(FileDispositionInformation) only records the request
++  // on the entry; nothing ever acted on it, so the guest's "delete this file
++  // when I close the handle" was silently dropped and the file survived. A
++  // title that overwrites a save by deleting the old file and recreating it
++  // then loops forever on its own overwrite prompt, because the file it just
++  // asked to be deleted is still there.
++  //
++  // The host handle has to be closed before the host file can be removed, so
++  // read the entry (and the name for the log line - Delete() destroys the
++  // entry) before Destroy(), and delete after it.
++  auto* entry = file_ ? file_->entry() : nullptr;
++  const bool delete_on_close = entry && entry->delete_on_close();
++  const std::string entry_path = delete_on_close ? entry->absolute_path() : std::string();
++
+   file_->Destroy();
++
++  if (delete_on_close) {
++    if (entry->Delete()) {
++      REXFS_DEBUG("Deleted '{}' on handle close (delete-on-close)", entry_path);
++    } else {
++      REXFS_WARN("delete-on-close failed for '{}'", entry_path);
++    }
++  }
+ }
+ 
+ uint64_t XFile::position() const {
+diff --git a/src/kernel/xboxkrnl/xboxkrnl_io.cpp b/src/kernel/xboxkrnl/xboxkrnl_io.cpp
+index 3f1a852..421cac0 100644
+--- a/src/kernel/xboxkrnl/xboxkrnl_io.cpp
++++ b/src/kernel/xboxkrnl/xboxkrnl_io.cpp
+@@ -42,6 +42,8 @@ struct CreateOptions {
+   static const uint32_t FILE_NON_DIRECTORY_FILE = 0x00000040;
+   // Optimization - file access will be random, not sequential.
+   static const uint32_t FILE_RANDOM_ACCESS = 0x00000800;
++  // Delete the file once the last handle to it closes.
++  static const uint32_t FILE_DELETE_ON_CLOSE = 0x00001000;
+ };
+ 
+ static bool IsValidPath(const std::string_view s, bool is_pattern) {
+@@ -153,6 +155,13 @@ u32 NtCreateFile_entry(mapped_u32 handle_out, u32 desired_access,
+ 
+   X_HANDLE handle = X_INVALID_HANDLE_VALUE;
+   if (XSUCCEEDED(result)) {
++    // NOTE(thps-p8 0012): the other way a guest asks for delete-on-close - the
++    // create option rather than NtSetInformationFile. Both land on the entry
++    // flag, which XFile's destructor now acts on.
++    if (create_options & CreateOptions::FILE_DELETE_ON_CLOSE) {
++      vfs_file->entry()->SetForDeletion(true);
++    }
++
+     // If true, desired_access SYNCHRONIZE flag must be set.
+     bool synchronous = (create_options & CreateOptions::FILE_SYNCHRONOUS_IO_ALERT) ||
+                        (create_options & CreateOptions::FILE_SYNCHRONOUS_IO_NONALERT);

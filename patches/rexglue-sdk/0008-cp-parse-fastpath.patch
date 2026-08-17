@@ -1,0 +1,447 @@
+diff --git a/src/graphics/command_processor.cpp b/src/graphics/command_processor.cpp
+index ca3e9a7..7bf59b9 100644
+--- a/src/graphics/command_processor.cpp
++++ b/src/graphics/command_processor.cpp
+@@ -80,6 +80,39 @@ REXCVAR_DEFINE_BOOL(async_shader_compilation, true, "GPU",
+                     "pipelines are being prepared.")
+     .lifecycle(rex::cvar::Lifecycle::kHotReload);
+ 
++// Command processor parse fastpath (native-renderer patch 0008 / M5.1).
++//
++// These live here rather than in graphics/flags.cpp because nothing outside
++// this translation unit reads them: they are parse-loop policy for the packet
++// dispatcher below, and keeping them next to the loop keeps the patch to one
++// file. The master switch defaults to false and every sub-switch is gated
++// behind it, so an unconfigured run parses the ring exactly the way it did
++// before this patch. The stats switch is independent on purpose - it is a
++// measurement instrument for both the stock and the fast path, and it is off
++// by default too.
++REXCVAR_DEFINE_BOOL(gpu_cp_fastpath, false, "GPU",
++                    "Master switch for the command processor parse fastpath. Latched once "
++                    "per primary-buffer batch; off = the stock packet loop.")
++    .lifecycle(rex::cvar::Lifecycle::kHotReload);
++REXCVAR_DEFINE_BOOL(gpu_cp_fastpath_reg_info, true, "GPU",
++                    "Fastpath sub-lever: answer the unknown-register check from a bitmap "
++                    "instead of the 3434-case RegisterFile::GetRegisterInfo switch "
++                    "(requires gpu_cp_fastpath)")
++    .lifecycle(rex::cvar::Lifecycle::kHotReload);
++REXCVAR_DEFINE_BOOL(gpu_cp_fastpath_bulk_regs, true, "GPU",
++                    "Fastpath sub-lever: write runs of side-effect-free registers with one "
++                    "byte-swapping copy instead of one WriteRegister call each "
++                    "(requires gpu_cp_fastpath)")
++    .lifecycle(rex::cvar::Lifecycle::kHotReload);
++REXCVAR_DEFINE_BOOL(gpu_cp_fastpath_loop, true, "GPU",
++                    "Fastpath sub-lever: skip the per-packet trace-writer calls inline when "
++                    "no trace is open (requires gpu_cp_fastpath)")
++    .lifecycle(rex::cvar::Lifecycle::kHotReload);
++REXCVAR_DEFINE_BOOL(gpu_cp_fastpath_stats, false, "GPU",
++                    "Log a 1 Hz packet/register mix line from the command processor parse "
++                    "loop. Works with the fastpath on or off; the A/B instrument for it.")
++    .lifecycle(rex::cvar::Lifecycle::kHotReload);
++
+ namespace rex::graphics {
+ 
+ using namespace rex::graphics::xenos;
+@@ -94,6 +127,150 @@ namespace {
+ // is waiting on.
+ uint64_t g_last_draw_tick = 0;
+ 
++// ---------------------------------------------------------------------------
++// Command processor parse fastpath (patch 0008 / M5.1).
++//
++// Every switch below is latched once per ExecutePrimaryBuffer batch and is
++// false until gpu_cp_fastpath is set, so the default parse loop is the stock
++// one. File scope rather than members because the parse loop belongs to the
++// single command processor instance and runs only on its own thread:
++// GraphicsSystem::WriteRegister (the guest MMIO path) writes the register file
++// directly and never reaches CommandProcessor::WriteRegister, so there is no
++// second writer to race with.
++bool g_cp_fastpath_reg_info = false;
++bool g_cp_fastpath_bulk_regs = false;
++bool g_cp_fastpath_loop = false;
++bool g_cp_fastpath_stats = false;
++
++// Register classification, built once from the register table itself.
++//
++//  known: RegisterFile::GetRegisterInfo(index) != nullptr. Answers the
++//         unknown-register debug log without walking the 3434-case switch,
++//         which is a jump into a very large and very cold code region on a
++//         path taken by every single register write.
++//  plain: known AND written by no branch of any WriteRegister implementation,
++//         i.e. storing the value is the entire effect. Derived from the actual
++//         branch sets, not guessed:
++//           CommandProcessor::WriteRegister - SCRATCH_REG0..SCRATCH_REG7
++//             (scratch writeback), COHER_STATUS_HOST (dirty bit),
++//             DC_LUT_RW_INDEX / DC_LUT_SEQ_COLOR / DC_LUT_PWL_DATA /
++//             DC_LUT_30_COLOR (gamma ramp state machine);
++//           VulkanCommandProcessor::WriteRegister and
++//           D3D12CommandProcessor::WriteRegister (identical sets) -
++//             SHADER_CONSTANT_000_X..511_W, SHADER_CONSTANT_BOOL_000_031..
++//             SHADER_CONSTANT_LOOP_31, SHADER_CONSTANT_FETCH_00_0..31_5
++//             (constant-buffer invalidation, texture fetch-constant
++//             invalidation, vertex-buffer residency invalidation).
++//         Anything a future override special-cases has to be added here, so
++//         the list is duplicated in the patch notes as a review anchor.
++//
++// Over-marking a register as non-plain is always safe - it just takes the
++// ordinary per-register path. Under-marking one is not, which is why unknown
++// registers are excluded from `plain` as well: they still owe the debug log.
++constexpr uint32_t kRegisterBitWords = (RegisterFile::kRegisterCount + 63) / 64;
++
++struct RegisterClassBits {
++  uint64_t known[kRegisterBitWords];
++  uint64_t plain[kRegisterBitWords];
++};
++
++inline bool RegisterBitTest(const uint64_t* words, uint32_t index) {
++  return ((words[index >> 6] >> (index & 63)) & 1) != 0;
++}
++
++// Word-level "is any bit in [first, last] set", the same shape as
++// VulkanCommandProcessor::WriteRegistersFromMem's range_has_any_constant_usage.
++// The bulk path costs a per-register bit test, so it must not be entered for a
++// range that has nothing to gain: this title's parse mix is dominated by
++// shader-constant runs, where the answer is no for the whole range and the
++// scan is O(range/64) instead of O(range).
++bool RegisterBitTestRange(const uint64_t* words, uint32_t first, uint32_t last) {
++  uint32_t first_word = first >> 6;
++  uint32_t last_word = last >> 6;
++  uint32_t first_bit = first & 63;
++  uint32_t last_bit = last & 63;
++  if (first_word == last_word) {
++    uint32_t bit_count = last_bit - first_bit + 1;
++    uint64_t mask = bit_count == 64 ? UINT64_MAX : ((UINT64_C(1) << bit_count) - 1) << first_bit;
++    return (words[first_word] & mask) != 0;
++  }
++  if (words[first_word] & (UINT64_MAX << first_bit)) {
++    return true;
++  }
++  for (uint32_t word = first_word + 1; word < last_word; ++word) {
++    if (words[word]) {
++      return true;
++    }
++  }
++  uint64_t last_mask = last_bit == 63 ? UINT64_MAX : ((UINT64_C(1) << (last_bit + 1)) - 1);
++  return (words[last_word] & last_mask) != 0;
++}
++
++const RegisterClassBits& BuildRegisterClassBits() {
++  static const RegisterClassBits bits = [] {
++    RegisterClassBits b{};
++    for (uint32_t i = 0; i < RegisterFile::kRegisterCount; ++i) {
++      if (!RegisterFile::GetRegisterInfo(i)) {
++        continue;
++      }
++      b.known[i >> 6] |= UINT64_C(1) << (i & 63);
++      b.plain[i >> 6] |= UINT64_C(1) << (i & 63);
++    }
++    auto exclude = [&b](uint32_t first, uint32_t last) {
++      for (uint32_t i = first; i <= last && i < RegisterFile::kRegisterCount; ++i) {
++        b.plain[i >> 6] &= ~(UINT64_C(1) << (i & 63));
++      }
++    };
++    exclude(XE_GPU_REG_SCRATCH_REG0, XE_GPU_REG_SCRATCH_REG7);
++    exclude(XE_GPU_REG_COHER_STATUS_HOST, XE_GPU_REG_COHER_STATUS_HOST);
++    exclude(XE_GPU_REG_DC_LUT_RW_INDEX, XE_GPU_REG_DC_LUT_RW_INDEX);
++    exclude(XE_GPU_REG_DC_LUT_SEQ_COLOR, XE_GPU_REG_DC_LUT_SEQ_COLOR);
++    exclude(XE_GPU_REG_DC_LUT_PWL_DATA, XE_GPU_REG_DC_LUT_PWL_DATA);
++    exclude(XE_GPU_REG_DC_LUT_30_COLOR, XE_GPU_REG_DC_LUT_30_COLOR);
++    exclude(XE_GPU_REG_SHADER_CONSTANT_000_X, XE_GPU_REG_SHADER_CONSTANT_511_W);
++    exclude(XE_GPU_REG_SHADER_CONSTANT_BOOL_000_031, XE_GPU_REG_SHADER_CONSTANT_LOOP_31);
++    exclude(XE_GPU_REG_SHADER_CONSTANT_FETCH_00_0, XE_GPU_REG_SHADER_CONSTANT_FETCH_31_5);
++    return b;
++  }();
++  return bits;
++}
++
++// Null until the first batch that runs with gpu_cp_fastpath set, so a default
++// run never even builds the table.
++const RegisterClassBits* g_register_class_bits = nullptr;
++
++// Below this a run is stored with plain loads and stores; copy_and_swap is an
++// out-of-line call and only pays for itself over several registers.
++constexpr uint32_t kBulkCopyMinRun = 4;
++
++// 1 Hz parse-mix instrument (gpu_cp_fastpath_stats). Plain counters on the
++// command processor thread; only touched when the stats switch is latched on.
++struct CpParseStats {
++  uint64_t packets = 0;
++  uint64_t type0_packets = 0;
++  uint64_t type1_packets = 0;
++  uint64_t type3_packets = 0;
++  uint64_t regs_total = 0;
++  uint64_t regs_bulk = 0;
++};
++CpParseStats g_cp_stats;
++uint64_t g_cp_stats_last_tick = 0;
++
++// Per-packet trace bookkeeping. The writer already no-ops when no trace is
++// open, but it does so behind two cross-translation-unit calls per packet;
++// with the loop lever on, the same question is answered inline.
++inline void TracePacketStart(TraceWriter& trace_writer, uint32_t base_ptr, uint32_t count) {
++  if (!g_cp_fastpath_loop || trace_writer.is_open()) {
++    trace_writer.WritePacketStart(base_ptr, count);
++  }
++}
++
++inline void TracePacketEnd(TraceWriter& trace_writer) {
++  if (!g_cp_fastpath_loop || trace_writer.is_open()) {
++    trace_writer.WritePacketEnd();
++  }
++}
++
+ ReadbackResolveMode ParseReadbackResolveMode(std::string_view value) {
+   if (value == "fast") {
+     return ReadbackResolveMode::kFast;
+@@ -437,7 +614,14 @@ void CommandProcessor::WriteRegister(uint32_t index, uint32_t value) {
+ 
+   // Volatile for the WAIT_REG_MEM loop.
+   const_cast<volatile uint32_t&>(regs.values[index]) = value;
+-  if (!regs.GetRegisterInfo(index)) {
++  // Same question, two ways to answer it: a bit test against the table built
++  // from GetRegisterInfo, or GetRegisterInfo itself. Identical verdict; the
++  // switch is a jump into 3434 cold case blocks on a path every register write
++  // takes.
++  const bool known = g_cp_fastpath_reg_info
++                         ? RegisterBitTest(g_register_class_bits->known, index)
++                         : regs.GetRegisterInfo(index) != nullptr;
++  if (!known) {
+     REXGPU_DEBUG("GPU: Write to unknown register ({:04X} = {:08X})", index, value);
+   }
+ 
+@@ -575,6 +759,46 @@ void CommandProcessor::WriteRegister(uint32_t index, uint32_t value) {
+ 
+ void CommandProcessor::WriteRegistersFromMem(uint32_t start_index, uint32_t* base,
+                                              uint32_t num_registers) {
++  if (g_cp_fastpath_stats) {
++    g_cp_stats.regs_total += num_registers;
++  }
++  // Fastpath: split the run at every register whose write has a side effect
++  // and store the rest straight into the register file. Order is preserved
++  // exactly - a side-effecting register still runs its WriteRegister with
++  // every preceding register of the run already stored, and every following
++  // one not yet stored - which is what the per-register loop below guarantees
++  // and what the gamma-ramp state machine and the scratch writeback depend on.
++  if (g_cp_fastpath_bulk_regs && num_registers &&
++      uint64_t(start_index) + num_registers <= RegisterFile::kRegisterCount &&
++      RegisterBitTestRange(g_register_class_bits->plain, start_index,
++                           start_index + num_registers - 1)) {
++    const uint64_t* plain = g_register_class_bits->plain;
++    uint32_t* values = register_file_->values;
++    uint32_t i = 0;
++    while (i < num_registers) {
++      uint32_t run = 0;
++      while (i + run < num_registers && RegisterBitTest(plain, start_index + i + run)) {
++        ++run;
++      }
++      if (run) {
++        if (run >= kBulkCopyMinRun) {
++          memory::copy_and_swap(values + start_index + i, base + i, run);
++        } else {
++          for (uint32_t j = 0; j < run; ++j) {
++            values[start_index + i + j] = memory::load_and_swap<uint32_t>(base + i + j);
++          }
++        }
++        if (g_cp_fastpath_stats) {
++          g_cp_stats.regs_bulk += run;
++        }
++        i += run;
++        continue;
++      }
++      WriteRegister(start_index + i, memory::load_and_swap<uint32_t>(base + i));
++      ++i;
++    }
++    return;
++  }
+   for (uint32_t i = 0; i < num_registers; ++i) {
+     uint32_t data = memory::load_and_swap<uint32_t>(base + i);
+     WriteRegister(start_index + i, data);
+@@ -699,6 +923,40 @@ void CommandProcessor::ReturnFromWait() {}
+ uint32_t CommandProcessor::ExecutePrimaryBuffer(uint32_t read_index, uint32_t write_index) {
+   SCOPE_profile_cpu_f("gpu");
+ 
++  // Parse-fastpath latch. Once per batch, outside the packet loop and outside
++  // the swap tail, so the mode cannot change under a half-parsed packet and
++  // the hot loop never re-reads a cvar. All false unless the master is set.
++  {
++    const bool fastpath = REXCVAR_GET(gpu_cp_fastpath);
++    if (fastpath && !g_register_class_bits) {
++      g_register_class_bits = &BuildRegisterClassBits();
++    }
++    g_cp_fastpath_reg_info = fastpath && REXCVAR_GET(gpu_cp_fastpath_reg_info);
++    g_cp_fastpath_bulk_regs = fastpath && REXCVAR_GET(gpu_cp_fastpath_bulk_regs);
++    g_cp_fastpath_loop = fastpath && REXCVAR_GET(gpu_cp_fastpath_loop);
++    g_cp_fastpath_stats = REXCVAR_GET(gpu_cp_fastpath_stats);
++  }
++  if (g_cp_fastpath_stats) {
++    uint64_t now = rex::chrono::Clock::QueryHostTickCount();
++    uint64_t frequency = rex::chrono::Clock::QueryHostTickFrequency();
++    if (!g_cp_stats_last_tick) {
++      g_cp_stats_last_tick = now;
++    } else if (now - g_cp_stats_last_tick >= frequency) {
++      double seconds = double(now - g_cp_stats_last_tick) / double(frequency);
++      REXGPU_INFO(
++          "gpu_cp_fastpath: packets/s {:.0f} (type0 {:.0f} type1 {:.0f} type3 {:.0f}) "
++          "regs/s {:.0f} bulk {:.0f} ({:.1f}%)",
++          double(g_cp_stats.packets) / seconds, double(g_cp_stats.type0_packets) / seconds,
++          double(g_cp_stats.type1_packets) / seconds, double(g_cp_stats.type3_packets) / seconds,
++          double(g_cp_stats.regs_total) / seconds, double(g_cp_stats.regs_bulk) / seconds,
++          g_cp_stats.regs_total
++              ? 100.0 * double(g_cp_stats.regs_bulk) / double(g_cp_stats.regs_total)
++              : 0.0);
++      g_cp_stats = CpParseStats();
++      g_cp_stats_last_tick = now;
++    }
++  }
++
+   // If we have a pending trace stream open it now. That way we ensure we get
+   // all commands.
+   if (!trace_writer_.is_open() && trace_state_ == TraceState::kStreaming) {
+@@ -774,9 +1032,12 @@ void CommandProcessor::ExecutePacket(uint32_t ptr, uint32_t count) {
+ bool CommandProcessor::ExecutePacket(memory::RingBuffer* reader) {
+   const uint32_t packet = reader->ReadAndSwap<uint32_t>();
+   const uint32_t packet_type = packet >> 30;
++  if (g_cp_fastpath_stats) {
++    ++g_cp_stats.packets;
++  }
+   if (packet == 0) {
+-    trace_writer_.WritePacketStart(uint32_t(reader->read_ptr() - 4), 1);
+-    trace_writer_.WritePacketEnd();
++    TracePacketStart(trace_writer_, uint32_t(reader->read_ptr() - 4), 1);
++    TracePacketEnd(trace_writer_);
+     return true;
+   }
+ 
+@@ -786,12 +1047,21 @@ bool CommandProcessor::ExecutePacket(memory::RingBuffer* reader) {
+ 
+   switch (packet_type) {
+     case 0x00:
++      if (g_cp_fastpath_stats) {
++        ++g_cp_stats.type0_packets;
++      }
+       return ExecutePacketType0(reader, packet);
+     case 0x01:
++      if (g_cp_fastpath_stats) {
++        ++g_cp_stats.type1_packets;
++      }
+       return ExecutePacketType1(reader, packet);
+     case 0x02:
+       return ExecutePacketType2(reader, packet);
+     case 0x03:
++      if (g_cp_fastpath_stats) {
++        ++g_cp_stats.type3_packets;
++      }
+       return ExecutePacketType3(reader, packet);
+     default:
+       assert_unhandled_case(packet_type);
+@@ -811,39 +1081,70 @@ bool CommandProcessor::ExecutePacketType0(memory::RingBuffer* reader, uint32_t p
+     return false;
+   }
+ 
+-  trace_writer_.WritePacketStart(uint32_t(reader->read_ptr() - 4), 1 + count);
++  TracePacketStart(trace_writer_, uint32_t(reader->read_ptr() - 4), 1 + count);
+ 
+   uint32_t base_index = (packet & 0x7FFF);
+   uint32_t write_one_reg = (packet >> 15) & 0x1;
+-  for (uint32_t m = 0; m < count; m++) {
+-    uint32_t reg_data = reader->ReadAndSwap<uint32_t>();
+-    uint32_t target_index = write_one_reg ? base_index : base_index + m;
+-    WriteRegister(target_index, reg_data);
++  // A sequential run is the only shape that can be written in bulk; a
++  // write_one_reg packet rewrites the same register `count` times and every
++  // one of those writes has to keep its side effects in order. Dispatch is
++  // unchanged either way: the bulk path is the base WriteRegistersFromMem
++  // called non-virtually, which still routes every side-effecting register
++  // through the virtual WriteRegister, so backend overrides see exactly the
++  // writes they saw before.
++  if (g_cp_fastpath_bulk_regs && !write_one_reg && count > 1 &&
++      uint64_t(base_index) + count <= RegisterFile::kRegisterCount &&
++      RegisterBitTestRange(g_register_class_bits->plain, base_index, base_index + count - 1)) {
++    memory::RingBuffer::ReadRange range = reader->BeginRead(size_t(count) * sizeof(uint32_t));
++    uint32_t written = 0;
++    if (range.first_length != 0) {
++      written = uint32_t(range.first_length / sizeof(uint32_t));
++      CommandProcessor::WriteRegistersFromMem(
++          base_index, reinterpret_cast<uint32_t*>(const_cast<uint8_t*>(range.first)), written);
++    }
++    if (range.second_length != 0) {
++      CommandProcessor::WriteRegistersFromMem(
++          base_index + written, reinterpret_cast<uint32_t*>(const_cast<uint8_t*>(range.second)),
++          uint32_t(range.second_length / sizeof(uint32_t)));
++    }
++    reader->EndRead(range);
++  } else {
++    if (g_cp_fastpath_stats) {
++      g_cp_stats.regs_total += count;
++    }
++    for (uint32_t m = 0; m < count; m++) {
++      uint32_t reg_data = reader->ReadAndSwap<uint32_t>();
++      uint32_t target_index = write_one_reg ? base_index : base_index + m;
++      WriteRegister(target_index, reg_data);
++    }
+   }
+ 
+-  trace_writer_.WritePacketEnd();
++  TracePacketEnd(trace_writer_);
+   return true;
+ }
+ 
+ bool CommandProcessor::ExecutePacketType1(memory::RingBuffer* reader, uint32_t packet) {
+   // Type-1 packet.
+   // Contains two registers of data. Type-0 should be more common.
+-  trace_writer_.WritePacketStart(uint32_t(reader->read_ptr() - 4), 3);
++  TracePacketStart(trace_writer_, uint32_t(reader->read_ptr() - 4), 3);
+   uint32_t reg_index_1 = packet & 0x7FF;
+   uint32_t reg_index_2 = (packet >> 11) & 0x7FF;
+   uint32_t reg_data_1 = reader->ReadAndSwap<uint32_t>();
+   uint32_t reg_data_2 = reader->ReadAndSwap<uint32_t>();
+   WriteRegister(reg_index_1, reg_data_1);
+   WriteRegister(reg_index_2, reg_data_2);
+-  trace_writer_.WritePacketEnd();
++  if (g_cp_fastpath_stats) {
++    g_cp_stats.regs_total += 2;
++  }
++  TracePacketEnd(trace_writer_);
+   return true;
+ }
+ 
+ bool CommandProcessor::ExecutePacketType2(memory::RingBuffer* reader, uint32_t packet) {
+   // Type-2 packet.
+   // No-op. Do nothing.
+-  trace_writer_.WritePacketStart(uint32_t(reader->read_ptr() - 4), 1);
+-  trace_writer_.WritePacketEnd();
++  TracePacketStart(trace_writer_, uint32_t(reader->read_ptr() - 4), 1);
++  TracePacketEnd(trace_writer_);
+   return true;
+ }
+ 
+@@ -861,9 +1162,9 @@ bool CommandProcessor::ExecutePacketType3(memory::RingBuffer* reader, uint32_t p
+ 
+   // To handle nesting behavior when tracing we special case indirect buffers.
+   if (opcode == PM4_INDIRECT_BUFFER) {
+-    trace_writer_.WritePacketStart(uint32_t(reader->read_ptr() - 4), 2);
++    TracePacketStart(trace_writer_, uint32_t(reader->read_ptr() - 4), 2);
+   } else {
+-    trace_writer_.WritePacketStart(uint32_t(reader->read_ptr() - 4), 1 + count);
++    TracePacketStart(trace_writer_, uint32_t(reader->read_ptr() - 4), 1 + count);
+   }
+ 
+   // & 1 == predicate - when set, we do bin check to see if we should execute
+@@ -873,7 +1174,7 @@ bool CommandProcessor::ExecutePacketType3(memory::RingBuffer* reader, uint32_t p
+     bool any_pass = (bin_select_ & bin_mask_) != 0;
+     if (!any_pass || opcode == PM4_XE_SWAP) {
+       reader->AdvanceRead(count * sizeof(uint32_t));
+-      trace_writer_.WritePacketEnd();
++      TracePacketEnd(trace_writer_);
+       return true;
+     }
+   }
+@@ -1012,7 +1313,7 @@ bool CommandProcessor::ExecutePacketType3(memory::RingBuffer* reader, uint32_t p
+       break;
+   }
+ 
+-  trace_writer_.WritePacketEnd();
++  TracePacketEnd(trace_writer_);
+   if (opcode == PM4_XE_SWAP) {
+     // End the trace writer frame.
+     if (trace_writer_.is_open()) {

@@ -1,0 +1,57 @@
+name: Windows report
+description: You ran the Windows launcher. Tell us what happened — working or not.
+title: "[Windows] "
+labels: [windows, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The Windows build has never run on real Windows hardware. A report that
+        it worked is as useful to us as a crash, so please file either way.
+
+        **Do not attach game files, disc images, or `default.xex`.**
+
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: What happened
+      options:
+        - It worked
+        - The launcher opened but something was wrong
+        - The launcher would not start
+        - Setup failed (disc check or copying)
+        - It handed off to the game and the game failed
+    validations:
+      required: true
+
+  - type: input
+    id: windows_version
+    attributes:
+      label: Windows version
+      placeholder: "e.g. Windows 11 24H2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: Details
+      description: What you did, what you expected, what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output and logs
+      description: >
+        Console output, and anything in the `logs/` folder of your install.
+      render: shell
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirm
+      options:
+        - label: This report contains no game files, disc images, or game assets.
+          required: true

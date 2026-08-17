@@ -1,0 +1,178 @@
+# Builds the launcher, and opens a release draft on a tag.
+#
+# CI cannot build the game: generating its source reads default.xex out of a
+# disc image, and no dump exists here. Game builds are cut on a machine that has
+# one and attached to the release by hand. The launcher links no part of the
+# SDK, so it builds anywhere.
+#
+# Windows is published as experimental: it compiles here, but no maintainer has
+# a Windows machine and it has never run on one.
+
+name: Launcher
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64,   os: ubuntu-24.04 }
+          - { name: macos-arm64,    os: macos-14 }
+          - { name: windows-x86_64, os: windows-2022 }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build cmake libfreetype-dev xvfb \
+            libx11-dev libxext-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev libgl1-mesa-dev
+          ./tools/ci/build_sdl3.sh
+
+      - name: Dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja cmake sdl3 sdl3_image freetype
+
+      # Windows deliberately avoids Git Bash and Ninja. Bash rewrites PATH into
+      # Unix form, which CMake - a native Windows program - cannot parse, so it
+      # finds neither the compiler nor Ninja even with the MSVC environment
+      # loaded. PowerShell, vcpkg and the default Visual Studio generator sidestep
+      # all of it.
+      - name: Dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # freetype is not optional: RmlUi's font engine hard-errors without
+          # it. Verified by cross-building the same dependency set locally.
+          vcpkg install sdl3 sdl3-image freetype --triplet x64-windows
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S src/launcher -B build/launcher -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DTHPS_P8_GUI_ISOLATED_SDL=OFF `
+            -DTHPS_P8_GUI_EMBED_SOURCE_ASSET_PATH=OFF
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake --build build/launcher --config Release --parallel
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ctest --test-dir build/launcher -C Release --output-on-failure
+
+      # The embedded source-assets path is a developer fallback and an absolute
+      # path compiled into the binary; a shipped launcher has assets beside it
+      # and never consults it.
+      - name: Configure
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake -S src/launcher -B build/launcher -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DTHPS_P8_GUI_EMBED_SOURCE_ASSET_PATH=OFF
+
+      - name: Build
+        if: runner.os != 'Windows'
+        shell: bash
+        run: cmake --build build/launcher --parallel
+
+      - name: Test
+        if: runner.os != 'Windows'
+        shell: bash
+        run: ctest --test-dir build/launcher --output-on-failure
+
+      # Parses every RML/RCSS document and fails on any diagnostic. It cannot
+      # prove a control can be activated — no window manager, so synthetic input
+      # never lands.
+      - name: Check UI documents
+        if: runner.os == 'Linux'
+        run: |
+          THPS_P8_GUI_STRICT=1 THPS_P8_GUI_EXIT_AFTER_LOAD=1 \
+            xvfb-run -a ./build/launcher/thps_p8_gui
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          set -eu
+          out="dist/thps_p8_launcher-${{ matrix.name }}"
+          mkdir -p "$out"
+          # Named exactly, not globbed. `thps_p8_gui*` also matches the Visual
+          # Studio generator's thps_p8_gui.sln and .vcxproj, and the first
+          # Windows artifact shipped six MSBuild project files.
+          #
+          # Single-config generators put the binary in build/launcher; the
+          # Visual Studio generator puts it in build/launcher/Release.
+          for exe in thps_p8_gui thps_p8_gui_settings_test; do
+            cp "build/launcher/$exe" "$out/" 2>/dev/null || \
+            cp "build/launcher/$exe.exe" "$out/" 2>/dev/null || \
+            cp "build/launcher/Release/$exe.exe" "$out/" 2>/dev/null || true
+          done
+          cp -r src/launcher/assets "$out/"
+          cp LICENSE NOTICE "$out/"
+          # SDL3 is shared and is not a system library on any of these runners,
+          # so it travels with the binary. vcpkg already stages its DLLs beside
+          # the executable; the source-built prefix does not.
+          cp build/launcher/Release/*.dll "$out/" 2>/dev/null || true
+          if [ -d .sdl3-prefix ]; then
+            cp .sdl3-prefix/bin/*.dll "$out/" 2>/dev/null || true
+            cp .sdl3-prefix/lib/*.so* "$out/" 2>/dev/null || true
+          fi
+          # Homebrew links by absolute path, so the macOS binary would otherwise
+          # run only on a machine with the same Homebrew SDL3 installed.
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            chmod +x tools/ci/bundle_macos.sh
+            ./tools/ci/bundle_macos.sh "$out" "$out/thps_p8_gui"
+          fi
+          ls -la "$out"
+          test -f "$out/thps_p8_gui" || test -f "$out/thps_p8_gui.exe"
+          # The first Windows artifact shipped .sln and .vcxproj files.
+          ! ls "$out"/*.vcxproj "$out"/*.sln 2>/dev/null | grep -q .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: thps_p8_launcher-${{ matrix.name }}
+          path: dist/
+          if-no-files-found: error
+
+  # Opens the draft a release is assembled into. It attaches nothing.
+  #
+  # A release carries complete playable archives - launcher, game, disc worker,
+  # supervisor and runtime - and those are cut on a machine that holds a dump,
+  # because building the game reads default.xex out of a disc image and CI has
+  # no disc. The first tagged build attached the launcher-only archives here and
+  # produced a release offering a download that cannot play anything.
+  #
+  # The launcher builds stay available as workflow artifacts for testing.
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          body: |
+            Draft. Attach the platform archives produced by
+            `tools/package_release.sh`, replace these notes, then publish.
