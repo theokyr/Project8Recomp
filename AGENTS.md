@@ -4,18 +4,17 @@ Read this before changing anything here.
 
 ## What this repository is
 
-A checkpointed mirror of a static recompilation of Tony Hawk's Project 8
-(Xbox 360). Development happens in a private monorepo; releases are staged into
-this repo with `tools/stage_from_monorepo.sh`, reviewed as a diff, and
-committed. So:
+A static recompilation of Tony Hawk's Project 8 (Xbox 360), published as
+checkpointed releases.
 
-- **Do not treat this as the working tree for the port.** A change made only
-  here is overwritten by the next staging run. Fixes to the port belong
-  upstream; fixes to this repo's own files (README, docs, workflows, tools)
-  belong here.
+- **`src/`, `config/` and `patches/` are synchronised from the project's
+  development tree.** Changes to them are applied there and arrive here in a
+  release, so a pull request against those paths may be applied as a patch
+  rather than merged as a commit. It will be credited either way. Everything
+  else — the README, `docs/`, `tools/`, `.github/` and the licence files —
+  belongs to this repository and is edited here directly.
 - **This repo has exactly one goal:** make it easy for someone who owns a legal
-  copy to end up with a ready-to-play build. It is not a research dump. If a
-  change does not serve that, it probably belongs in the monorepo instead.
+  copy to end up with a ready-to-play build. It is not a research dump.
 
 ## The rule that overrides everything
 
@@ -95,10 +94,9 @@ Explain why, not what — particularly when the obvious approach was tried and
 failed. That history is the most valuable thing in a comment and the easiest to
 lose.
 
-**Do not cite internal documents.** No plan identifiers, milestone numbers,
-release-gate item numbers, or filenames from the private monorepo. None of those
-exist here, so they read as nonsense. State the reasoning the citation stood
-for.
+**Do not cite documents that are not in this repository.** No plan
+identifiers, milestone numbers or release-gate item numbers: none of them exist
+here, so they read as nonsense. State the reasoning the citation stood for.
 
 ## Before committing
 

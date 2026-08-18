@@ -47,7 +47,6 @@ toolchain:
   commit: e8ce24fa73cd7c1ede80262c06f34893b7963dbe
   license: BSD-3-Clause
   consumption: unforked-external-clone
-  local_clone: /home/theo/src/extern/game-preservation/rexglue-sdk
   acquisition: prebuilt-release-first
   decision_record: docs/decisions/0003-thps8-recompilation-toolchain.md
   host_compiler: clang

@@ -5,7 +5,7 @@
 # stay a UI over two subprocess calls.
 #
 #   cmake -S recomp/identify -B recomp/identify/out -G Ninja \
-#         -DCMAKE_PREFIX_PATH=$HOME/.cache/game-preservation/rexglue-sdk/<version>
+#         -DTHPS_P8_SDK_ROOT=<path to a rexglue SDK prefix>
 cmake_minimum_required(VERSION 3.24)
 project(thps_p8_identify LANGUAGES CXX)
 
@@ -18,8 +18,9 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 if(NOT DEFINED THPS_P8_SDK_ROOT)
-  set(THPS_P8_SDK_ROOT "$ENV{HOME}/.cache/game-preservation/rexglue-sdk/0.9.0-dev.g3eb9b51-p0p4"
-      CACHE PATH "Prebuilt rexglue SDK prefix")
+  # No default. The SDK lives wherever the builder put it, and guessing a
+  # path only produces a confusing failure somewhere else.
+  set(THPS_P8_SDK_ROOT "" CACHE PATH "Prebuilt rexglue SDK prefix")
 endif()
 
 if(NOT EXISTS "${THPS_P8_SDK_ROOT}/include/rex/filesystem/devices/disc_image_device.h")

@@ -28,6 +28,21 @@ output.
 
 **Fixes.** See the open issues.
 
+## Where your change lands
+
+`src/`, `config/` and `patches/` are synchronised from the project's development
+tree. Pull requests against them are welcome and get read the same way as any
+other — but they may be applied as a patch and arrive in the next release,
+rather than appearing as your commit in this history. You will be credited in
+the change that carries them.
+
+Everything else is edited here directly: the README, `docs/`, `tools/`,
+`.github/` and the licence files. A pull request against those is merged
+normally.
+
+If you are fixing something and are not sure which half it is in: send it
+anyway. Sorting that out is not your job.
+
 ## Before you send a pull request
 
 ```sh

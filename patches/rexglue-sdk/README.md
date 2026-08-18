@@ -173,7 +173,7 @@ against the live tree - they must be byte-identical.
 ## Applying
 
 ```sh
-cd ~/src/extern/game-preservation/rexglue-sdk        # at nightly-20260722-3eb9b511
+cd <your rexglue-sdk clone>                          # at nightly-20260722-3eb9b511
 git apply /path/to/recomp/patches/rexglue-sdk/clock.patch \
   /path/to/recomp/patches/rexglue-sdk/graphics_system.patch \
   /path/to/recomp/patches/rexglue-sdk/mmio_handler.patch \
@@ -197,7 +197,7 @@ patched source explicitly (the pinned upstream tree has no macOS preset):
 cmake -S . -B out/build/macos-arm64 -G Ninja \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DCMAKE_OSX_ARCHITECTURES=arm64 \
-  -DCMAKE_INSTALL_PREFIX="$HOME/.cache/game-preservation/rexglue-sdk/0.9.0-dev.g3eb9b51-p0p4-macos-arm64" \
+  -DCMAKE_INSTALL_PREFIX="<your SDK prefix>-macos-arm64" \
   -DREXGLUE_ENABLE_TRACY=OFF -DREXGLUE_BUILD_TESTS=OFF
 cmake --build out/build/macos-arm64 --target install
 ```
