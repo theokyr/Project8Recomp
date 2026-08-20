@@ -58,6 +58,27 @@ for name in ObjBase.h SDKDDKVer.h Windows.h WinSock2.h WS2tcpip.h DXProgrammable
   done
 done
 
+# 128-bit division helpers. clang lowers `unsigned __int128` division to
+# compiler-rt calls, and distributions ship compiler-rt for their own platform
+# only - so a Linux host has no Windows copy and the SDK fails to link with
+# `undefined symbol: __udivti3`, from the single 128-bit divide in the
+# runtime's clock code. windows-msvc.cmake links this if it is present.
+#
+# This step used to be missing while the toolchain file's comment claimed it
+# existed, so a clean machine following the documented build got all the way to
+# the final link before failing on a symbol with no obvious owner.
+echo "==> building the 128-bit division helpers"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+mkdir -p "$SYSROOT/lib"
+TMPOBJ="$(mktemp -d)"
+trap 'rm -rf "$TMPOBJ"' EXIT
+clang-cl --target=x86_64-pc-windows-msvc -march=x86-64-v3 /MD /c \
+  "$HERE/msvc_compat_builtins.c" "/Fo:$TMPOBJ/msvc_compat_builtins.obj" \
+  /imsvc"$SYSROOT/crt/include" /imsvc"$SYSROOT/sdk/include/ucrt" \
+  /imsvc"$SYSROOT/sdk/include/um" /imsvc"$SYSROOT/sdk/include/shared" >/dev/null
+llvm-lib "/OUT:$SYSROOT/lib/thps_msvc_compat.lib" "$TMPOBJ/msvc_compat_builtins.obj" >/dev/null
+echo "    $SYSROOT/lib/thps_msvc_compat.lib"
+
 cat <<EOF
 
 Sysroot ready: $SYSROOT
