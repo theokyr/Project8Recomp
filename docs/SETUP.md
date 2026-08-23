@@ -110,6 +110,11 @@ Frame rate is worth one note: the cap is on by default and should stay on. With
 it off, in-level cutscenes run several times too fast. See
 [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
 
+The **Performance** setting is enabled on a fresh install. It selects the
+title-specific runtime paths measured for this release; turning it off restores
+the upstream-compatible paths for troubleshooting. It is independent of the
+frame-rate cap.
+
 ## Controllers
 
 A controller works without configuration, including if you plug it in after the

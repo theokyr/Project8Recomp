@@ -15,9 +15,10 @@ closed without an answer.
 ## What is useful
 
 **A Windows report.** This is the single most valuable thing anyone can send
-right now. The launcher is built for Windows and has never run on real Windows
-hardware. Whether it works or falls over, we want to know — see the Windows
-issue template.
+right now. v0.1.0 started on one reported Windows 10 machine but performed
+poorly; the complete v0.2.0 build has only been exercised under Proton. Whether
+it works or falls over on Windows, we want to know — see the Windows issue
+template.
 
 **A hash from another regional disc.** The launcher accepts one release today.
 If you own a PAL or NTSC-J disc, the SHA-256 of its `default.xex` and the size
@@ -50,6 +51,7 @@ cmake -S src/launcher -B build/launcher -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build/launcher
 ctest --test-dir build/launcher --output-on-failure
 tools/check_no_game_content.sh
+tools/check_patch_series.sh
 ```
 
 If your change adds, upgrades or removes a third-party dependency, regenerate
@@ -58,6 +60,10 @@ If your change adds, upgrades or removes a third-party dependency, regenerate
 ```sh
 tools/make_notice.py --sdk /path/to/rexglue-sdk > NOTICE
 ```
+
+If your change adds or removes an SDK patch, update
+`patches/rexglue-sdk/series`; the inventory check requires every patch exactly
+once.
 
 ## Things worth knowing about this codebase
 

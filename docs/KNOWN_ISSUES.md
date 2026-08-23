@@ -1,6 +1,6 @@
 # Known issues
 
-As of the v0.2.0 release candidate.
+As of v0.2.0.
 
 ## In-level cutscenes run too fast without a frame cap
 
@@ -27,14 +27,15 @@ functionally correct and not performance-playable.
 ## Windows is mitigated and Proton-tested, not hardware-verified
 
 Everything for Windows — the launcher, the disc worker, the supervisor and the
-game itself — is built for the MSVC ABI and exercised under Proton. None of it
-has run on real Windows hardware, because nobody on the project has a machine
-to try it on.
+game itself — is built for the MSVC ABI and exercised under Proton. A community
+report confirms that v0.1.0 started on Windows 10, but its CPU use and pacing
+were unusable there. The maintainers do not own a Windows machine, so the
+complete v0.2.0 build has not been verified on real Windows hardware.
 
-What has been confirmed under the compatibility layer: the launcher opens and navigates, a real
-disc image is identified correctly, a full 4.7 GB extraction is byte-identical
-to the Linux one, the handoff to the game works, and the game boots, loads its
-executable, creates a Vulkan swapchain and renders.
+What has been confirmed under the compatibility layer: the launcher opens and
+navigates, a real disc image is identified correctly, a full 4.7 GB extraction
+is byte-identical to the Linux one, the handoff to the game works, and the game
+boots, loads its executable, creates a Vulkan swapchain and renders.
 
 What that does **not** tell us is how any of it behaves on Windows. Proton is a
 different implementation of the same interfaces, and the places it differs are
@@ -50,10 +51,20 @@ waiters kept consuming CPU.
 v0.2.0 stops disabling SDL's timer resolution, waits on a high-resolution
 deadline timer, and delivers a bounded number of elapsed vblanks after a late
 wake. Related guest waits now sleep or block on their actual producer instead
-of truncating sub-millisecond waits into yields. The complete Windows archive
-must sustain a Proton smoke before the release is tagged. This is a concrete
-mitigation for the reported mechanism, but only a report from real Windows can
-close the hardware-verification gap.
+of truncating sub-millisecond waits into yields.
+
+The complete v0.2.0 archive sustained both the menu and a deterministic
+2,600-plus-draw late-game fixture under Proton 10 on a Steam Deck. The menu
+sample measured 16.68 ms p50 / 17.71 ms p95. The heavy fixture held the same
+30 fps presentation mode as native at 33.30 / 34.45 ms p50 / p95; uncapped, it
+measured 28.00 / 32.15 ms versus native Linux at 25.00 / 27.99 ms. The detached
+Windows process used roughly 319–349% CPU in those heavy runs, compared with
+253–256% natively. Those CPU figures are lifetime process snapshots because
+Wine reparents the process outside the test supervisor.
+
+This is a concrete mitigation for the reported mechanism, with a measurable
+Proton overhead. Only a report from real Windows can tell us whether it fixes
+the original machine's behavior and close the hardware-verification gap.
 
 If you run it, we want the report either way. "It opened and the buttons worked"
 is as useful as a crash.
@@ -62,8 +73,8 @@ is as useful as a crash.
 
 On Linux, stopping the game from the launcher sends `SIGTERM` and the game
 flushes its state on the way out. Windows offers no equivalent for a windowed
-process from outside, so that path terminates it directly. Untested, along with
-the rest of the Windows build.
+process from outside, so that path terminates it directly. The Stop control has
+not been exercised on real Windows hardware.
 
 ## Verification that needs a human
 

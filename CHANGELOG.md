@@ -4,7 +4,7 @@
 
 v0.2.0 promotes the runtime configuration measured on Steam Deck, fixes the
 resolution control that v0.1.0 exposed but did not actually apply, and replaces
-launcher-only CI archives with complete pre-tag release candidates.
+launcher-only CI archives with complete, locally assembled pre-tag candidates.
 
 ### One player entry, without breaking old installs
 
@@ -51,10 +51,19 @@ shape reported in #1.
 v0.2.0 uses a high-resolution deadline timer on Windows, keeps SDL's timer
 resolution enabled, and performs bounded vblank catch-up after a late wake.
 Several other hot waits now round sleep durations correctly or block on the
-counter/event that can actually satisfy them. The complete Windows build is
-smoke-tested under Proton before tagging. That validates the build and the
-compatibility-layer behavior; real Windows remains explicitly unverified, so
-this release calls #1 mitigated rather than claiming hardware proof.
+counter/event that can actually satisfy them.
+
+The complete Windows archive was exercised through Proton 10 on a Steam Deck.
+In a short menu window it measured **16.68 ms p50 / 17.71 ms p95**. In the
+marked 2,600-plus-draw Funpark window it sustained the same 30 fps presentation
+mode as native (**33.30 / 34.45 ms p50 / p95**). Uncapped, the Windows build
+under Proton measured **28.00 / 32.15 ms** against native Linux at **25.00 /
+27.99 ms**. The detached Windows process used roughly **319–349% CPU** across
+the two Funpark runs, compared with **253–256%** for native Linux. That is a
+real compatibility-layer cost, but the process remained bounded to about 3.5
+of the Deck's eight logical cores and did not reproduce v0.1.0's near-32 Hz
+pacing failure. Real Windows remains explicitly unverified, so this release
+calls #1 mitigated rather than claiming a fix.
 
 ### Accepted Steam Deck performance frontier
 
@@ -62,14 +71,16 @@ The release enables the measured title configuration by default. It combines
 command-processor parsing and primitive-cache fixes with bounded guest waits,
 native vertex/index residency and unpack paths, upload prefetch, and exact
 reuse of adjacent sampler, texture-request, and Vulkan view work. Every lever
-remains individually disableable through the launcher performance setting.
+can still be disabled through the launcher's Performance setting.
 
 On the deterministic late-game Funpark fixture, the accepted Steam Deck LCD
-build measured approximately 2,667 draws per frame, **25.307 ms p50**,
-**27.015 ms p95**, **39.51 mean fps**, and **257.1% process CPU** (about 2.57
-logical cores). This is the current heavy-scene frontier, not a locked-60
-claim. Smaller improvements were retained when they passed correctness and
-showed no regression.
+build's three-run uncapped promotion median measured approximately 2,667 draws
+per frame, **25.307 ms mean**, **25.000 ms p50**, **27.015 ms p95**, **39.51
+effective fps**, and **257.1% process CPU** (about 2.57 logical cores). With the
+player-default frame cap, the final archive held a stable 30 fps presentation
+mode in the same severe view at **33.34 ms p50 / 33.52 ms p95**. This is the
+current heavy-scene frontier, not a locked-60 claim. Smaller improvements were
+retained when they passed correctness and showed no regression.
 
 ### Reproducible release gates
 
@@ -124,7 +135,7 @@ slower — see [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md).
 | --- | --- |
 | Linux x86_64 | Verified |
 | macOS arm64 | Verified |
-| Windows x86_64 | Launcher only, experimental, never run on real hardware |
+| Windows x86_64 | Complete archive, experimental; later reported to start on Windows 10 with unusable performance |
 
 ### Known issues
 

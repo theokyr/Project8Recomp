@@ -42,11 +42,14 @@ You will need:
    four times slower, and on macOS it does not run at all.
 2. **Your extracted game data**, which the launcher produces, or which you can
    extract yourself with `thps_p8_identify --identify_disc=... --extract_to=...`.
-3. **Codegen**, run against your `default.xex` using `config/thps_p8_manifest.toml`.
-   Replace `REPLACE_ME` in it with the path to your own tree first.
+3. **Codegen**, run against your `default.xex` using a local copy of
+   `config/thps_p8_manifest.toml`. Replace `REPLACE_ME` in the copy with paths
+   to your own tree; do not put machine-specific paths in the tracked template.
 
 ```sh
-rexglue codegen config/thps_p8_manifest.toml
+cp config/thps_p8_manifest.toml config/thps_p8_manifest.local.toml
+# Edit config/thps_p8_manifest.local.toml, then:
+rexglue codegen config/thps_p8_manifest.local.toml
 
 cmake -S src/game -B build/game -G Ninja \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -80,7 +83,7 @@ cmake -S src/game -B build/game-win -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE=tools/cross/windows-msvc.cmake \
   -DREXSDK_DIR=/path/to/patched/rexglue-sdk \
   -DREXGLUE_USE_D3D12=OFF -DREXGLUE_USE_VULKAN=ON \
-  -DCMAKE_BUILD_TYPE=Release
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo
 cmake --build build/game-win
 ```
 
@@ -105,9 +108,21 @@ cmake --build build/identify
 
 ## Putting a portable install together
 
-Stage the four binaries, the SDK's runtime libraries and the GPU plugin, and the
-launcher's `assets/` into one folder. The GPU plugin is the one people forget:
-without `librexgpu-xenos*`, the game starts, opens a window and draws nothing.
+Use `tools/package_release.sh` rather than assembling a folder by hand. It
+stages the four compatibility-preserved `thps_p8*` components plus the new
+`Project8Recomp` player entry, the SDK runtime, the matching GPU plugin, and the
+launcher's assets. The GPU plugin is the easy one to forget: without
+`librexgpu-xenos*`, the game starts, opens a window and draws nothing.
+
+```sh
+tools/package_release.sh --platform linux-x86_64 --version v0.2.0 \
+  --game build/game --launcher build/launcher --identify build/identify \
+  --sdk /path/to/your/sdk/prefix --out dist
+```
+
+The Windows package also needs the app-local Visual C++ runtime DLLs beside the
+launcher. Hosted CI stages them in its Windows launcher artifact; the packager
+refuses a Windows archive when they are absent.
 
 ## Before publishing anything
 

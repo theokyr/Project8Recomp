@@ -83,10 +83,11 @@ So: **anything input-driven needs a human before it is called done.** Say
 implying a machine confirmed it. Do not fake a screenshot, and do not describe a
 headless run as evidence that a control works.
 
-**Windows is unverified in the same way, only more so.** The Win32 code is
-written from documentation and has never run on real Windows. Never describe it
-as working, and never describe a compatibility-layer result as evidence about
-real Windows.
+**Windows is unverified in the same way, only more so.** A community report
+confirms that v0.1.0 started on Windows 10, but the maintainers have not run the
+complete v0.2.0 build on real Windows hardware. Never describe it as verified,
+and never describe a compatibility-layer result as evidence about real
+Windows.
 
 ## Comments
 
@@ -102,6 +103,7 @@ here, so they read as nonsense. State the reasoning the citation stood for.
 
 ```sh
 tools/check_no_game_content.sh
+tools/check_patch_series.sh
 cmake -S src/launcher -B build/launcher -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build/launcher && ctest --test-dir build/launcher --output-on-failure
 ```
@@ -125,7 +127,8 @@ is worse than no gate.
 
 ## Tone in user-facing text
 
-No developer vocabulary reaches a player. No "sha256", no "XEX", no "shared
-memory segment", no exit codes. Say what is wrong in terms of the disc and the
-game, then say what to do about it. The launcher's failure copy in
-`src/launcher/src/launcher_app.cpp` is the reference.
+The launcher's player-facing failure copy avoids developer vocabulary: no
+"sha256", "XEX", "shared memory segment", or exit codes. Say what is wrong in
+terms of the disc and the game, then say what to do about it. Contributor docs
+may use exact hashes and executable names when those facts are the task. The
+failure copy in `src/launcher/src/launcher_app.cpp` is the reference.

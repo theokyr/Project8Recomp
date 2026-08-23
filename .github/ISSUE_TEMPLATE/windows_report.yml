@@ -1,13 +1,14 @@
 name: Windows report
-description: You ran the Windows launcher. Tell us what happened — working or not.
+description: You ran the Windows build. Tell us what happened — working or not.
 title: "[Windows] "
 labels: [windows, needs-triage]
 body:
   - type: markdown
     attributes:
       value: |
-        The Windows build has never run on real Windows hardware. A report that
-        it worked is as useful to us as a crash, so please file either way.
+        The current complete build has not been maintainer-verified on real
+        Windows hardware. A report that it worked is as useful to us as a
+        crash, so please file either way.
 
         **Do not attach game files, disc images, or `default.xex`.**
 
@@ -21,6 +22,15 @@ body:
         - The launcher would not start
         - Setup failed (disc check or copying)
         - It handed off to the game and the game failed
+        - The game ran but performance or frame pacing was wrong
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Project8Recomp version
+      placeholder: "e.g. v0.2.0"
     validations:
       required: true
 
@@ -31,6 +41,19 @@ body:
       placeholder: "e.g. Windows 11 24H2"
     validations:
       required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: CPU and GPU
+      placeholder: "e.g. Ryzen 5 5600X, Radeon RX 6700 XT"
+
+  - type: input
+    id: performance
+    attributes:
+      label: Performance, if the game started
+      description: Approximate fps and total CPU use from Task Manager are enough.
+      placeholder: "e.g. 60 fps, 35% total CPU"
 
   - type: textarea
     id: what

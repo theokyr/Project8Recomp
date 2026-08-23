@@ -32,5 +32,8 @@ the SDK tree until the entire series is present.
   verification work used by the v0.2.0 performance preset.
 - `0028`: developer-console launch commands used by repeatable smoke fixtures.
 
-Every new patch must be listed exactly once in `series`. Release CI checks both
-directions: an unlisted patch and a missing listed patch are failures.
+Every new patch must be listed exactly once in `series`.
+`tools/check_patch_series.sh` and CI check both directions: an unlisted patch
+and a missing listed patch are failures. Release preparation additionally
+applies the complete series to the pristine SDK revision above and refuses any
+hunk that does not apply.

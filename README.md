@@ -40,15 +40,17 @@ C++ ahead of time and compiled into a normal executable for your machine.
 | --- | --- |
 | Linux x86_64 | **Verified.** The main development and testing platform. |
 | macOS arm64 | **Verified** on Apple Silicon. Correct, but slow — see [known issues](docs/KNOWN_ISSUES.md). |
-| Windows x86_64 | **Experimental. Complete build tested under Proton; not yet verified on real Windows.** |
+| Windows x86_64 | **Experimental. Complete v0.2.0 build tested under Proton; not yet verified on real Windows.** |
 
 The Windows situation, plainly: everything is cross-compiled from Linux,
 because nobody on this project owns a Windows machine. The complete v0.2.0
-archive is smoke-tested under Proton before release: launcher, disc handoff,
-Vulkan game boot and sustained frame pacing. That is genuine evidence and it
-is still not the same thing as running on Windows — Proton is a different
-implementation of the same interfaces, and the places it differs are where an
-untested port breaks.
+archive was tested through Proton 10 on a Steam Deck: the launcher and game
+started, the late-game 2,600-plus-draw fixture rendered correctly, and the
+default frame cap sustained a 33.30 ms median there. Uncapped, the same Windows
+build measured 28.00 ms median versus 25.00 ms for the native Linux build.
+That is useful compatibility and performance evidence, but it is still not a
+test on Windows — Proton is a different implementation of the same interfaces,
+and the places it differs are where an untested port breaks.
 
 If you try the Windows launcher, please tell us what happened. "It opened and
 the buttons worked" is as useful to us as a crash report, and there is
@@ -179,10 +181,10 @@ when you do.
 <details>
 <summary><b>My antivirus flagged it.</b></summary>
 
-A false positive. Statically recompiled game binaries pattern-match packer and
-injector heuristics, and this happens to every project of this kind. Nothing is
-downloaded and nothing is written outside the install folder. Tell us which
-engine so we can track it.
+Static recompilations can resemble packers or injectors to heuristic scanners,
+but do not dismiss a warning blindly. Download only from this repository's
+release page, verify the archive and its `SHA256SUMS`, and tell us the engine
+and detection name so we can investigate it.
 </details>
 
 ## Building from source
