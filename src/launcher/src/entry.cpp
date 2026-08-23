@@ -19,6 +19,10 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--gui") == 0) {
       show_gui = true;
+    } else if (std::strcmp(argv[i], "--play") == 0) {
+      // Default behaviour already requests Play. Do not forward it when
+      // --gui is also present: the explicit request for the UI must win.
+      continue;
     } else if (std::strcmp(argv[i], "--help") == 0 ||
                std::strcmp(argv[i], "-h") == 0) {
       std::puts(

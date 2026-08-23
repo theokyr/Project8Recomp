@@ -167,6 +167,7 @@ target_compile_features(thps_p8_gui_settings_test PRIVATE cxx_std_20)
 
 enable_testing()
 add_test(NAME settings COMMAND thps_p8_gui_settings_test)
+add_test(NAME player_entry_help COMMAND Project8Recomp --help)
 
 # Assets are looked up next to the executable first so an installed portable
 # directory is self-contained; this fallback is what makes `gui-run` work
