@@ -74,11 +74,11 @@ showed no regression.
   `patches/rexglue-sdk/series` and round-trips against the pinned SDK base.
 - The publishable-tree check now includes tracked and untracked non-ignored
   files. Root-only ignore rules no longer hide `src/game/` from Git.
-- A manual, trusted release-candidate workflow builds the launcher from the
-  candidate commit on Ubuntu 24.04 and Windows Server 2022, combines it with
-  prepared game/runtime components, checks the Linux GLIBC 2.39 / GLIBCXX
-  3.4.32 ceiling, checks the redistribution boundary, and uploads complete
-  Linux and Windows ZIPs for Deck and Proton smoke tests before any tag exists.
+- Every candidate commit builds launcher artifacts on Ubuntu 24.04 and Windows
+  Server 2022. The maintainer downloads those exact-commit artifacts, combines
+  them locally with the prepared game/runtime components, checks the Linux
+  GLIBC 2.39 / GLIBCXX 3.4.32 ceiling and redistribution boundary, and smoke
+  tests the complete Linux and Windows ZIPs on Deck before any tag exists.
 
 ## v0.1.0 — first public release
 
