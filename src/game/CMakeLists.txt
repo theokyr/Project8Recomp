@@ -67,6 +67,9 @@ function(thps_p8_anonymise_paths target)
         target_compile_options(${target} PRIVATE
             "/clang:-ffile-prefix-map=$ENV{HOME}=."
             "/clang:-ffile-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}/..=.")
+        # A PE debug directory otherwise records the absolute build-tree path
+        # to the external PDB even though the PDB itself is not distributed.
+        target_link_options(${target} PRIVATE "/PDBALTPATH:%_PDB%")
     else()
         target_compile_options(${target} PRIVATE
             "-ffile-prefix-map=$ENV{HOME}=."

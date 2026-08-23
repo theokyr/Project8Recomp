@@ -36,6 +36,7 @@ add_executable(thps_p8_launch
 # the GNU spelling with only a warning, so Windows needs the passthrough.
 if(MSVC)
   target_compile_options(thps_p8_launch PRIVATE "/clang:-ffile-prefix-map=$ENV{HOME}=.")
+  target_link_options(thps_p8_launch PRIVATE "/PDBALTPATH:%_PDB%")
 else()
   target_compile_options(thps_p8_launch PRIVATE "-ffile-prefix-map=$ENV{HOME}=.")
 endif()

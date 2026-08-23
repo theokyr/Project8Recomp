@@ -78,6 +78,7 @@ if(MSVC)
   target_compile_options(thps_p8_identify PRIVATE
     "/clang:-ffile-prefix-map=$ENV{HOME}=."
     "/clang:-ffile-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}/..=.")
+  target_link_options(thps_p8_identify PRIVATE "/PDBALTPATH:%_PDB%")
 else()
   target_compile_options(thps_p8_identify PRIVATE
     "-ffile-prefix-map=$ENV{HOME}=."
