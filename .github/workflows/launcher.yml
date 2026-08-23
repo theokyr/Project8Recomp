@@ -116,6 +116,27 @@ jobs:
           THPS_P8_GUI_STRICT=1 THPS_P8_GUI_EXIT_AFTER_LOAD=1 \
             xvfb-run -a ./build/launcher/thps_p8_gui
 
+      # Both the launcher and the MSVC-ABI game use /MD. Proton and developer
+      # machines commonly already provide this runtime, which made an archive
+      # missing it look healthy; a clean Windows install then failed before
+      # our own entry point could show an error. Ship Visual Studio's app-local
+      # redistributable DLLs beside the executables.
+      - name: Stage Visual C++ runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $install = & $vswhere -latest -products '*' -property installationPath
+          if (-not $install) { throw 'Visual Studio installation not found' }
+          $versions = Get-ChildItem (Join-Path $install 'VC\Redist\MSVC') -Directory |
+            Sort-Object { [version]$_.Name } -Descending
+          $crt = $versions |
+            ForEach-Object { Join-Path $_.FullName 'x64\Microsoft.VC143.CRT' } |
+            Where-Object { Test-Path $_ } |
+            Select-Object -First 1
+          if (-not $crt) { throw 'Visual C++ x64 app-local runtime not found' }
+          Copy-Item (Join-Path $crt '*.dll') build/launcher/Release/
+
       - name: Stage artifact
         shell: bash
         run: |
@@ -153,6 +174,12 @@ jobs:
           ls -la "$out"
           test -f "$out/thps_p8_gui" || test -f "$out/thps_p8_gui.exe"
           test -f "$out/Project8Recomp" || test -f "$out/Project8Recomp.exe"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            test -f "$out/msvcp140.dll"
+            test -f "$out/msvcp140_atomic_wait.dll"
+            test -f "$out/vcruntime140.dll"
+            test -f "$out/vcruntime140_1.dll"
+          fi
           # The first Windows artifact shipped .sln and .vcxproj files.
           ! ls "$out"/*.vcxproj "$out"/*.sln 2>/dev/null | grep -q .
 

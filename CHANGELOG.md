@@ -21,6 +21,9 @@ launcher-only CI archives with complete pre-tag release candidates.
   `SHA256SUMS`, the changelog, licences, assets, and all required runtime
   components. A Deck user can unpack the Linux ZIP and add `Project8Recomp` as
   a Non-Steam Game without forcing Proton.
+- The Windows ZIP includes the app-local Visual C++ runtime used by its `/MD`
+  binaries, so a clean player machine does not need a separate redistributable
+  installer before the wrapper can start.
 
 ### Resolution changes now take effect — resolves #2
 

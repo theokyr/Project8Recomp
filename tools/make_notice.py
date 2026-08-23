@@ -70,6 +70,17 @@ LAUNCHER = [
     ),
 ]
 
+APP_LOCAL_RUNTIME = [
+    (
+        "Microsoft Visual C++ Runtime (Windows ZIP only)",
+        "Microsoft Software License Terms",
+        "Unmodified x64 DLLs copied from Visual Studio 2022's VC\\Redist tree.\n"
+        "Redistribution is subject to the Visual Studio license terms and its\n"
+        "official REDIST list:\n"
+        "https://learn.microsoft.com/visualstudio/releases/2022/redistribution",
+    ),
+]
+
 HEADER = """\
 ================================================================================
 NOTICE
@@ -144,6 +155,11 @@ def main():
 
     if args.fonts.is_file():
         out.append("\n" + read(args.fonts) + "\n")
+
+    out.append(rule("The Windows app-local runtime"))
+    for name, licence, note in APP_LOCAL_RUNTIME:
+        out.append(f"\n{'-' * 80}\n{name} - {licence}\n{'-' * 80}\n\n")
+        out.append(textwrap.dedent(note).strip() + "\n")
 
     out.append(rule("Not included in this release"))
     out.append(

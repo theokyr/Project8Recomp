@@ -2741,6 +2741,21 @@ build-time dependency: these files reach the user.
 
 
 ================================================================================
+The Windows app-local runtime
+================================================================================
+
+
+--------------------------------------------------------------------------------
+Microsoft Visual C++ Runtime (Windows ZIP only) - Microsoft Software License Terms
+--------------------------------------------------------------------------------
+
+Unmodified x64 DLLs copied from Visual Studio 2022's VC\Redist tree.
+Redistribution is subject to the Visual Studio license terms and its
+official REDIST list:
+https://learn.microsoft.com/visualstudio/releases/2022/redistribution
+
+
+================================================================================
 Not included in this release
 ================================================================================
 

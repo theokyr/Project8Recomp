@@ -105,6 +105,29 @@ for lib in $(needed_libs "$GAME_DIR/thps_p8$EXE"); do
 done
 [ -n "$rt_name" ] || { echo "the game links no rexglue runtime - wrong --game dir?" >&2; exit 1; }
 
+# Tracy is linked by the instrumented runtime, not necessarily by the game
+# executable itself. Looking only at the top-level import table produced a ZIP
+# that contained rexruntimerd but omitted TracyClientrd, so the loader failed
+# before main on the exact configuration used for performance verification.
+for lib in $(needed_libs "$STAGE/$rt_name"); do
+  case "$lib" in
+    *TracyClient*|*Tracy*)
+      found_tracy=0
+      for dir in "$SDK_DIR/lib" "$SDK_DIR/bin"; do
+        if [ -f "$dir/$lib" ]; then
+          cp -L "$dir/$lib" "$STAGE/"
+          found_tracy=1
+          break
+        fi
+      done
+      [ "$found_tracy" -eq 1 ] || {
+        echo "runtime dependency missing from SDK prefix: $lib" >&2
+        exit 1
+      }
+      ;;
+  esac
+done
+
 # The GPU plugin is dlopen'd by name, so it is not in the link table and is the
 # one people forget. Without it the game starts, opens a window, runs, and draws
 # nothing - which reads as a broken port rather than a missing file.
@@ -131,6 +154,19 @@ done
 for lib in "$LAUNCHER_DIR"/$LIBGLOB; do
   [ -f "$lib" ] && cp -L "$lib" "$STAGE/"
 done
+
+if [ "$PLATFORM" = "windows-x86_64" ]; then
+  # /MD is required by the MSVC-ABI SDK and launcher dependencies. Requiring
+  # the app-local runtime here is what makes the ZIP work on a clean Windows
+  # machine instead of only on a developer machine (or Proton, which supplies
+  # compatible built-ins and otherwise hides the omission).
+  for crt in msvcp140.dll msvcp140_atomic_wait.dll vcruntime140.dll vcruntime140_1.dll; do
+    [ -f "$STAGE/$crt" ] || {
+      echo "missing app-local Visual C++ runtime: $crt" >&2
+      exit 1
+    }
+  done
+fi
 
 # macOS links its dependencies by absolute path, so a Homebrew-built launcher
 # names /opt/homebrew/... and runs only on a machine with the same Homebrew
