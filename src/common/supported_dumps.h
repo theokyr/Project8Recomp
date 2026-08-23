@@ -12,8 +12,8 @@
 //   - Region is NOT a discriminator: this dump reports region_raw 0xFFFFFFFF.
 //   - There is no override. An unknown hash is a refusal, not a prompt.
 //
-// This header lives in recomp/common/ rather than beside either consumer
-// because there are two gates and they must never drift: `thps_p8_identify`
+// This header is shared rather than living beside either consumer because
+// there are two gates and they must never drift: `thps_p8_identify`
 // guards the launcher's first-run path, and the game's own OnConfigurePaths
 // gate guards every other way in - a bare
 // `thps_p8`, a `thps_p8_launch` passthrough. A second copy of this table would

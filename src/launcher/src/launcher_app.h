@@ -118,6 +118,15 @@ class LauncherApp {
   void SetText(const char* element_id, const std::string& text);
   void BeginPick();
   void VerifyPicked(const std::string& path);
+  // Looks for a disc image sitting beside the launcher and verifies it. Called
+  // once, from Initialise(), and only when nothing is installed yet.
+  void ScanForNearbyDisc();
+  // Recognises a game directory that is already extracted but carries no
+  // install marker, and writes the marker rather than asking for the disc again.
+  void AdoptExistingInstall();
+  // First-run only: picks display defaults that suit a handheld panel.
+  void SeedHandheldDefaults();
+  void ShowNearbyDisc();
   // Returns false and moves to kFailNoSpace when the volume cannot hold the
   // install. `needed` is what the disc image reported, not an estimate.
   bool CheckSpaceFor(std::uint64_t needed);
@@ -179,6 +188,8 @@ class LauncherApp {
   bool should_launch_ = false;
   std::string disc_path_;
   std::uint64_t disc_bytes_ = 0;  // as reported by identity, before any copy
+  // A verified disc image found next to the launcher, if there was one.
+  std::string nearby_disc_;
 
   Settings settings_;
   std::vector<DisplayOption> displays_;

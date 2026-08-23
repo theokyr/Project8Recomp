@@ -1,0 +1,36 @@
+diff --git a/src/core/threading_posix.cpp b/src/core/threading_posix.cpp
+index 6316247..17c9609 100644
+--- a/src/core/threading_posix.cpp
++++ b/src/core/threading_posix.cpp
+@@ -371,9 +371,28 @@ class PosixConditionBase {
+       if (timeout == std::chrono::milliseconds::max()) {
+         std::this_thread::sleep_for(std::chrono::milliseconds(1));
+       } else {
+-        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - now);
+-        auto sleep_time = std::min(remaining, std::chrono::milliseconds(1));
+-        std::this_thread::sleep_for(sleep_time);
++        // Do NOT duration_cast the remaining time to milliseconds here. It
++        // truncates toward zero, so any sub-millisecond remainder becomes a
++        // sleep of 0 - and this loop then spins at full speed, re-taking every
++        // handle's mutex, until the deadline passes.
++        //
++        // That is not a corner case, it is the normal path. Alertable waits
++        // slice this at exactly kAlertablePollSlice = 1 ms, so after the first
++        // check the remainder is ALWAYS under a millisecond and the sleep was
++        // always zero. Measured on THPS P8: the audio worker dispatches its
++        // guest callback 188 times a second - exactly the 48 kHz buffer rate,
++        // perfectly healthy - and still burned 77% of a core, with the profile
++        // showing 21% across four pthread_mutex_trylock sites and nothing in
++        // guest code. It was spinning out the tail of every 1 ms slice.
++        //
++        // Keep the clock's native resolution and let nanosleep take a
++        // sub-millisecond value.
++        auto remaining = end_time - now;
++        auto sleep_time = std::min<std::chrono::steady_clock::duration>(
++            remaining, std::chrono::milliseconds(1));
++        if (sleep_time > std::chrono::steady_clock::duration::zero()) {
++          std::this_thread::sleep_for(sleep_time);
++        }
+       }
+     }
+   }

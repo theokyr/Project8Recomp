@@ -21,8 +21,18 @@
 
 			<div id="disc_path" class="path panel-path"></div>
 
+			<!-- A disc image sitting next to the launcher, found at startup.
+			     Hidden unless one was found and verified; the id is toggled by
+			     LauncherApp, not by a state class, because it is orthogonal to
+			     state - the welcome panel looks the same either way apart from
+			     which button leads. -->
+			<div id="nearby" class="nearby">
+				<p id="nearby_text" class="subtitle"></p>
+			</div>
+
 			<!-- welcome / picking -->
 			<div class="panel panel-welcome actions">
+				<button id="install_nearby" class="primary">Install this disc</button>
 				<button id="browse" class="primary">Choose disc image…</button>
 				<button id="quit" class="ghost">Not now</button>
 			</div>

@@ -21,7 +21,7 @@ index 803f335..382b455 100644
 +  // src/core/perf/counter.cpp (both static_assert-guarded against kCount),
 +  // the frames.csv emitter (trailing append only), the gpu_native_stats
 +  // printer in src/graphics/flags.cpp, the debug overlay in
-+  // src/ui/overlay/debug_overlay.cpp, and recomp/tools/residency_report.py
++  // src/ui/overlay/debug_overlay.cpp, and the residency report parser
 +  // (resolves by header name, so it only needs a new CounterSpec to report
 +  // the column).
 +  //

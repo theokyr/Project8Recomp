@@ -1,0 +1,204 @@
+diff --git a/include/rex/cvar.h b/include/rex/cvar.h
+index ed117c5..824e46a 100644
+--- a/include/rex/cvar.h
++++ b/include/rex/cvar.h
+@@ -118,6 +118,19 @@ namespace rex::cvar {
+ //=============================================================================
+ 
+ std::vector<std::string> Init(int argc, char** argv);
++
++/**
++ * Source-engine style launch commands: `+name arg arg` groups collected by
++ * Init() from the positional arguments, in the order they appeared. Each entry
++ * is one console line ("name arg arg"), ready to hand to a console executor.
++ *
++ * These are deliberately NOT applied by the cvar layer. A `+map` has to run
++ * after the app is up, and only the app knows when that is - so Init() only
++ * collects them and the app drains them at a point of its choosing.
++ *
++ * Takes: the queue is cleared, so a second call returns empty.
++ */
++std::vector<std::string> TakeLaunchCommands();
+ void LoadConfig(const std::filesystem::path& config_path);
+ void ApplyEnvironment();
+ void FinalizeInit();
+diff --git a/include/rex/ui/overlay/console_overlay.h b/include/rex/ui/overlay/console_overlay.h
+index 09cb1d5..63b6669 100644
+--- a/include/rex/ui/overlay/console_overlay.h
++++ b/include/rex/ui/overlay/console_overlay.h
+@@ -31,7 +31,16 @@ class ConsoleDialog : public ImGuiDialog {
+   void OnDraw(ImGuiIO& io) override;
+ 
+  private:
+-  void ExecuteCommand(std::string_view cmd);
++  // Executes a whole console line: splits on top-level `;` (outside double
++  // quotes) and runs each segment in order, so `a 1; b 2` works the way a
++  // Source-engine console does. The line enters history once, as typed.
++  void ExecuteCommand(std::string_view line);
++  // One already-split command: `help`, a command invocation, or a cvar
++  // get/set. Adds nothing to history.
++  void ExecuteOne(std::string_view cmd);
++  // Splits on `;` at quote depth zero. Public-by-test only in spirit; kept
++  // private because the console owns the grammar.
++  static std::vector<std::string_view> SplitStatements(std::string_view line);
+   void AddLocal(spdlog::level::level_enum level, std::string text);
+   void RefreshCategories();
+   static int InputTextCallback(ImGuiInputTextCallbackData* data);
+diff --git a/src/core/cvar.cpp b/src/core/cvar.cpp
+index a9e42f0..8542414 100644
+--- a/src/core/cvar.cpp
++++ b/src/core/cvar.cpp
+@@ -67,6 +67,14 @@ std::unordered_map<std::string, PendingValues>& GetPendingValuesStorage() {
+   return pending;
+ }
+ 
++// Source-style `+command args` groups collected by Init(), in argv order, each
++// already flattened into one console line. Same function-local-static shape as
++// the registry above, for the same static-init-order reason.
++std::vector<std::string>& GetLaunchCommandsStorage() {
++  static std::vector<std::string> commands;
++  return commands;
++}
++
+ // Convert flag name to environment variable: gpu_vsync -> REX_GPU_VSYNC
+ std::string FlagNameToEnvVar(std::string_view name) {
+   std::string result = "REX_";
+@@ -558,13 +566,39 @@ std::vector<std::string> Init(int argc, char** argv) {
+   // Stash unrecognized --options for cvars that register later. Supported
+   // forms: --name=value, --name (true), --no-name (false); a separated
+   // "--name value" pair is ambiguous with a positional, so never consumed.
++  //
++  // Positionals beginning with '+' open a Source-style launch command: the
++  // token after '+' is the command name and every following bare positional is
++  // one of its arguments, up to the next '+' or '--'. They are collected here
++  // rather than executed, because a launch command generally needs a running
++  // app - see TakeLaunchCommands(). A bare positional with no open launch
++  // command behaves exactly as before, so GetPositionalOptions() matching is
++  // unaffected for callers that use neither.
+   std::vector<std::string> positional;
++  std::string pending_command;
++  auto flush_pending = [&]() {
++    if (!pending_command.empty()) {
++      GetLaunchCommandsStorage().push_back(std::move(pending_command));
++      pending_command.clear();
++    }
++  };
+   for (const auto& arg : app.remaining()) {
+     std::string_view view(arg);
++    if (view.starts_with("+") && view.size() > 1) {
++      flush_pending();
++      pending_command = std::string(view.substr(1));
++      continue;
++    }
+     if (!view.starts_with("--")) {
+-      positional.push_back(arg);
++      if (!pending_command.empty()) {
++        pending_command += ' ';
++        pending_command += arg;
++      } else {
++        positional.push_back(arg);
++      }
+       continue;
+     }
++    flush_pending();
+     view.remove_prefix(2);
+     std::string name;
+     std::string value = "true";
+@@ -580,10 +614,18 @@ std::vector<std::string> Init(int argc, char** argv) {
+     std::lock_guard lock(GetRegistryMutex());
+     GetPendingValuesStorage()[name].cmdline = std::move(value);
+   }
++  flush_pending();
+   g_init_done = true;
+   return positional;
+ }
+ 
++std::vector<std::string> TakeLaunchCommands() {
++  std::lock_guard lock(GetRegistryMutex());
++  std::vector<std::string> out;
++  out.swap(GetLaunchCommandsStorage());
++  return out;
++}
++
+ void LoadConfig(const std::filesystem::path& config_path) {
+   if (!std::filesystem::exists(config_path)) {
+     REXLOG_DEBUG("Config file not found: {}", config_path.string());
+diff --git a/src/ui/overlay/console_overlay.cpp b/src/ui/overlay/console_overlay.cpp
+index f9a9fe2..d932cb5 100644
+--- a/src/ui/overlay/console_overlay.cpp
++++ b/src/ui/overlay/console_overlay.cpp
+@@ -167,23 +167,65 @@ void ConsoleDialog::AddLocal(spdlog::level::level_enum level, std::string text)
+   local_entries_.push_back({rex::LogEntry{level, "console", std::move(text)}, seq});
+ }
+ 
+-void ConsoleDialog::ExecuteCommand(std::string_view cmd) {
++// Splits a console line on `;` at quote depth zero.
++//
++// Only a double quote toggles depth, and a backslash escapes the next
++// character, so `echo "a; b"` is one statement and `echo \\"` does not open a
++// quote that swallows the rest of the line. Empty segments are dropped by
++// ExecuteOne's own trim, so `a;;b` and `a; b` behave the same.
++std::vector<std::string_view> ConsoleDialog::SplitStatements(std::string_view line) {
++  std::vector<std::string_view> out;
++  bool in_quotes = false;
++  size_t start = 0;
++  for (size_t i = 0; i < line.size(); ++i) {
++    const char c = line[i];
++    if (c == '\\' && i + 1 < line.size()) {
++      ++i;  // skip the escaped character
++      continue;
++    }
++    if (c == '"') {
++      in_quotes = !in_quotes;
++      continue;
++    }
++    if (c == ';' && !in_quotes) {
++      out.push_back(line.substr(start, i - start));
++      start = i + 1;
++    }
++  }
++  out.push_back(line.substr(start));
++  return out;
++}
++
++void ConsoleDialog::ExecuteCommand(std::string_view line) {
+   // Trim whitespace.
+-  while (!cmd.empty() && cmd.front() == ' ')
+-    cmd.remove_prefix(1);
+-  while (!cmd.empty() && cmd.back() == ' ')
+-    cmd.remove_suffix(1);
+-  if (cmd.empty())
++  while (!line.empty() && line.front() == ' ')
++    line.remove_prefix(1);
++  while (!line.empty() && line.back() == ' ')
++    line.remove_suffix(1);
++  if (line.empty())
+     return;
+ 
+-  // Record in history.
+-  if (history_.empty() || history_.back() != cmd) {
++  // Record in history as typed - one entry for the whole chain, so recalling it
++  // with Up replays the chain rather than its last segment.
++  if (history_.empty() || history_.back() != line) {
+     if (history_.size() >= kMaxHistory)
+       history_.pop_front();
+-    history_.push_back(std::string(cmd));
++    history_.push_back(std::string(line));
+   }
+   history_pos_ = -1;
+ 
++  for (std::string_view statement : SplitStatements(line))
++    ExecuteOne(statement);
++}
++
++void ConsoleDialog::ExecuteOne(std::string_view cmd) {
++  while (!cmd.empty() && cmd.front() == ' ')
++    cmd.remove_prefix(1);
++  while (!cmd.empty() && cmd.back() == ' ')
++    cmd.remove_suffix(1);
++  if (cmd.empty())
++    return;
++
+   if (cmd == "help" || cmd == "?") {
+     auto names = rex::cvar::ListFlags();
+     std::sort(names.begin(), names.end());

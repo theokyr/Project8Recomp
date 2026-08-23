@@ -32,19 +32,20 @@
 
 			<div class="panel panel-ready actions">
 				<button id="play" class="primary">Play</button>
-				<button id="settings" class="ghost">Display</button>
+				<button id="settings" class="ghost">Settings</button>
 				<button id="folder" class="ghost">Open save folder</button>
 				<button id="about" class="ghost">About</button>
 			</div>
 
-			<!-- Display settings. Every row is a button that cycles its own
-			     choices: four settings and a pad to drive them, where a dropdown
+			<!-- Settings. Every row is a button that cycles its own
+			     choices: five settings and a pad to drive them, where a dropdown
 			     would need a popup, a list widget and a focus trap to say the
 			     same thing. The value spans carry ids of their own because a
 			     click can land on the text rather than the button. -->
 			<div class="panel panel-settings">
+				<p class="setting-group">Display</p>
 				<div class="setting-row">
-					<span class="setting-label">Resolution</span>
+					<span class="setting-label">Window size</span>
 					<div class="spacer"/>
 					<button id="set_resolution" class="ghost setting-value">
 						<span id="set_resolution_value">Game default</span>
@@ -71,8 +72,18 @@
 						<span id="set_vsync_value">Game default</span>
 					</button>
 				</div>
+				<p class="setting-group">Performance</p>
+				<div class="setting-row">
+					<span class="setting-label">Enhancements</span>
+					<div class="spacer"/>
+					<button id="set_performance" class="ghost setting-value">
+						<span id="set_performance_value">On</span>
+					</button>
+				</div>
+
 				<p id="settings_note" class="footer">
-					Saved as you change them. They apply the next time you press Play.
+					Saved as you change them. Choosing a window size uses Windowed mode
+					unless you explicitly choose Fullscreen.
 				</p>
 				<div class="actions">
 					<button id="settings_back" class="primary">Back</button>

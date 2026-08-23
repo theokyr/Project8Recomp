@@ -1,0 +1,38 @@
+diff --git a/src/graphics/command_processor.cpp b/src/graphics/command_processor.cpp
+index 7bf59b9..0e21aee 100644
+--- a/src/graphics/command_processor.cpp
++++ b/src/graphics/command_processor.cpp
+@@ -1498,11 +1498,32 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
+       // Wait.
+       if (wait >= 0x100) {
+         PrepareForWait();
++        // The guest's poll interval is a hint in whole milliseconds, and this
++        // runs on the thread that produces every draw. Honouring it literally
++        // spends 1 ms of a 16.67 ms budget per wait, and a handful of waits is
++        // the difference between holding 60 Hz and quantising to 30 - which is
++        // exactly what this title did, because the guest limiter has no
++        // intermediate rate to fall to.
++        //
++        // The branch is why it went unnoticed for so long: with vsync off this
++        // yielded instead, so every perf measurement taken uncapped ran the
++        // other arm and read 4x faster than the configuration players use.
++        // Same scene, same build: 117.8 fps uncapped vs 30.9 fps vsync-on.
++        //
++        // Cap the wait well under a frame rather than removing it. Yielding
++        // outright (what the vsync-off arm does) also restores the rate but
++        // keeps a core hot for the whole wait; the recheck loop above costs
++        // almost nothing per iteration - PrepareForWait is a flush on an
++        // inactive trace writer and ReturnFromWait is empty - so a short sleep
++        // gets the latency back without the spin.
++        constexpr auto kMaxPollWait = std::chrono::microseconds(125);
+         if (!REXCVAR_GET(vsync)) {
+           // User wants it fast and dangerous.
+           rex::thread::MaybeYield();
+         } else {
+-          rex::thread::Sleep(std::chrono::milliseconds(wait / 0x100));
++          auto requested = std::chrono::duration_cast<std::chrono::microseconds>(
++              std::chrono::milliseconds(wait / 0x100));
++          rex::thread::Sleep(std::min(requested, kMaxPollWait));
+         }
+         rex::thread::SyncMemory();
+         ReturnFromWait();

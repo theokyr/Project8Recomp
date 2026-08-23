@@ -38,11 +38,81 @@ const char* TriBoolText(int v) { return v == 1 ? "true" : "false"; }
 }  // namespace
 
 const std::vector<std::string>& Settings::ResolutionChoices() {
-  // "" first and unnamed here; the UI labels it "Game default". These are the
-  // presets the game's --resolution flag accepts, and nothing else is offered
-  // because nothing else is known to work.
-  static const std::vector<std::string> choices = {"", "720p", "1080p", "1440p", "4k"};
+  // "" first and unnamed here; the UI labels it "Game default".
+  //
+  // Everything except "1280x800" is a preset the game's --resolution flag
+  // accepts. 1280x800 is not one of them, and cannot be: --resolution takes
+  // named 16:9 presets and the Steam Deck's panel is 16:10. It is offered
+  // anyway because it is the panel the port is most likely to be played on,
+  // and it renders as an explicit guest video mode rather than a preset - see
+  // RenderArgv.
+  //
+  // It is a MODE THE 2006 TITLE NEVER SHIPPED. The Xbox 360 offered 4:3 and
+  // 16:9; nothing in the retail build was framed for 16:10, so HUD placement
+  // and FMV framing are the things to look at before trusting it. That is why
+  // it is selectable and not the default: 720p letterboxed on the Deck's panel
+  // is the safe arm, and the choice between them is being made from mark
+  // screenshots taken on the hardware rather than from reasoning.
+  static const std::vector<std::string> choices = {
+      "", "720p", "1080p", "1440p", "4k", "1280x800"};
   return choices;
+}
+
+bool Settings::IsExplicitMode(const std::string& value, int* width, int* height) {
+  const size_t x = value.find('x');
+  if (x == std::string::npos || x == 0 || x + 1 >= value.size()) return false;
+  int w = 0;
+  int h = 0;
+  try {
+    w = std::stoi(value.substr(0, x));
+    h = std::stoi(value.substr(x + 1));
+  } catch (...) {
+    return false;
+  }
+  if (w <= 0 || h <= 0) return false;
+  if (width) *width = w;
+  if (height) *height = h;
+  return true;
+}
+
+const std::vector<std::pair<std::string, std::string>>& Settings::PerformanceFlags() {
+  // gpu_cp_fastpath slims the command-processor parse loop; the primitive
+  // processor cache threshold stops re-converting small index buffers; native
+  // residency makes vertex and index data resident by copying instead of
+  // page-watching it; frame-ahead prefetch moves the predicted vertex upload
+  // wave before the render pass; adjacent sampler reuse avoids redundant
+  // same-submission Vulkan sampler lookups; exact texture-request reuse skips
+  // an unchanged binding and image-usage walk; exact last-view reuse bypasses
+  // the Vulkan view-key map for an immediately repeated request; the timer
+  // queue blocks between deadlines instead of yield-spinning; the guest
+  // empty-ring wait backs off
+  // after a bounded poll interval or blocks on its exact producer event; the
+  // render thread blocks on the actual swap-complete counter producer; the
+  // title's hot u8x4 render-preparation unpack bypasses the full guest vector
+  // register model; the title's full vertex-format record unpack does the same
+  // for the fixed 252-byte-to-496-byte transform, and its x86 SIMD path keeps
+  // the exact transform while vectorizing the packed decodes. All sixteen
+  // default OFF in the runtime because they are project patches rather than
+  // upstream behaviour - which is exactly why the launcher has to ask for them.
+  static const std::vector<std::pair<std::string, std::string>> flags = {
+      {"gpu_cp_fastpath", "true"},
+      {"primitive_processor_cache_min_indices", "4096"},
+      {"gpu_native_residency", "true"},
+      {"gpu_native_prefetch", "true"},
+      {"gpu_native_index", "true"},
+      {"gpu_native_vertex", "true"},
+      {"gpu_sampler_set_reuse", "true"},
+      {"gpu_texture_request_reuse", "true"},
+      {"gpu_texture_last_view_cache", "true"},
+      {"timer_queue_blocking_wait", "true"},
+      {"guest_ring_wait_backoff", "true"},
+      {"guest_ring_wait_event", "true"},
+      {"guest_swap_wait", "true"},
+      {"guest_u8x4_unpack_native", "true"},
+      {"guest_vertex_unpack_native", "true"},
+      {"guest_vertex_unpack_simd", "true"},
+  };
+  return flags;
 }
 
 bool Settings::Valid() const {
@@ -51,6 +121,7 @@ bool Settings::Valid() const {
   if (monitor < -1) return false;
   if (fullscreen < -1 || fullscreen > 1) return false;
   if (vsync < -1 || vsync > 1) return false;
+  if (performance < -1 || performance > 1) return false;
   return true;
 }
 
@@ -60,6 +131,7 @@ void Settings::Sanitise() {
   if (monitor < -1) monitor = -1;
   if (fullscreen < -1 || fullscreen > 1) fullscreen = -1;
   if (vsync < -1 || vsync > 1) vsync = -1;
+  if (performance < -1 || performance > 1) performance = -1;
 }
 
 std::vector<std::string> RenderArgv(const LaunchPaths& paths, const Settings& settings) {
@@ -78,16 +150,47 @@ std::vector<std::string> RenderArgv(const LaunchPaths& paths, const Settings& se
   s.Sanitise();
 
   if (!s.resolution.empty()) {
-    argv.push_back("--resolution=" + s.resolution);
+    int width = 0;
+    int height = 0;
+    if (Settings::IsExplicitMode(s.resolution, &width, &height)) {
+      // The host window and guest video mode, set directly. --resolution only
+      // understands its named presets, and passing it "1280x800" would be
+      // rejected by the runtime's own validation rather than silently ignored.
+      // Setting only the guest mode is not enough: this title keeps its own
+      // render targets fixed, so the visible effect of this setting is the
+      // host window size.
+      argv.push_back("--window_width=" + std::to_string(width));
+      argv.push_back("--window_height=" + std::to_string(height));
+      argv.push_back("--video_mode_width=" + std::to_string(width));
+      argv.push_back("--video_mode_height=" + std::to_string(height));
+    } else {
+      argv.push_back("--resolution=" + s.resolution);
+    }
   }
   if (s.monitor >= 0) {
     argv.push_back("--monitor=" + std::to_string(s.monitor));
   }
   if (s.fullscreen >= 0) {
     argv.push_back(std::string("--fullscreen=") + TriBoolText(s.fullscreen));
+  } else if (!s.resolution.empty()) {
+    // The SDK defaults to borderless fullscreen at the desktop's dimensions,
+    // where every requested window size is discarded. A user who chooses a
+    // size - including by editing settings.toml - must see that choice take
+    // effect. An explicit Fullscreen choice still wins.
+    argv.push_back("--fullscreen=false");
   }
   if (s.vsync >= 0) {
     argv.push_back(std::string("--vsync=") + TriBoolText(s.vsync));
+  }
+
+  // The one setting whose UNSET state emits flags. See settings.h: the
+  // runtime's defaults are off, and a player who never opens the settings
+  // screen should still get the configuration this port was measured in.
+  // Explicitly off emits nothing, which lands back on those runtime defaults.
+  if (s.performance != 0) {
+    for (const auto& [name, value] : Settings::PerformanceFlags()) {
+      argv.push_back("--" + name + "=" + value);
+    }
   }
   return argv;
 }
@@ -107,6 +210,8 @@ std::string SerialiseSettings(const Settings& settings) {
   if (settings.monitor >= 0) out << "monitor = " << settings.monitor << "\n";
   if (settings.fullscreen >= 0) out << "fullscreen = " << TriBoolText(settings.fullscreen) << "\n";
   if (settings.vsync >= 0) out << "vsync = " << TriBoolText(settings.vsync) << "\n";
+  if (settings.performance >= 0)
+    out << "performance = " << TriBoolText(settings.performance) << "\n";
   return out.str();
 }
 
@@ -129,6 +234,8 @@ Settings ParseSettings(const std::string& text) {
       settings.fullscreen = ParseTriBool(value);
     } else if (key == "vsync") {
       settings.vsync = ParseTriBool(value);
+    } else if (key == "performance") {
+      settings.performance = ParseTriBool(value);
     }
     // Unknown keys are skipped on purpose: a file written by a newer build must
     // still load in an older one rather than being rejected wholesale.

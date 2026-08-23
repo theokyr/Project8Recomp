@@ -1,0 +1,117 @@
+--- a/thirdparty/disruptorplus/include/disruptorplus/blocking_wait_strategy.hpp
++++ b/thirdparty/disruptorplus/include/disruptorplus/blocking_wait_strategy.hpp
+@@ -118,11 +118,11 @@
+                 std::unique_lock<std::mutex> lock(m_mutex);
+                 m_cv.wait_for(
+                     lock,
++                    timeout,
+                     [&]() -> bool {
+                         result = minimum_sequence_after(sequence, count, sequences);
+                         return difference(result, sequence) >= 0;
+-                    },
+-                    timeout);
++                    });
+             }
+             return result;
+         }
+@@ -171,11 +171,11 @@
+                 std::unique_lock<std::mutex> lock(m_mutex);
+                 m_cv.wait_until(
+                     lock,
++                    timeoutTime,
+                     [&]() -> bool {
+                         result = minimum_sequence_after(sequence, count, sequences);
+                         return difference(result, sequence) >= 0;
+-                    },
+-                    timeoutTime);
++                    });
+             }
+             return result;
+         }
+--- a/src/core/timer_queue.cpp
++++ b/src/core/timer_queue.cpp
+@@ -12,21 +12,71 @@
+ #include <algorithm>
+ #include <forward_list>
+ 
++#include <disruptorplus/blocking_wait_strategy.hpp>
+ #include <disruptorplus/multi_threaded_claim_strategy.hpp>
+ #include <disruptorplus/ring_buffer.hpp>
+ #include <disruptorplus/sequence_barrier.hpp>
+ #include <disruptorplus/spin_wait_strategy.hpp>
+ 
+ #include <rex/assert.h>
++#include <rex/cvar.h>
+ #include <rex/thread.h>
+ #include <rex/thread/timer_queue.h>
+ 
++REXCVAR_DEFINE_BOOL(timer_queue_blocking_wait, false, "Threading",
++                    "Block rather than spin while the guest timer queue waits");
++
+ namespace dp = disruptorplus;
+ 
+ namespace rex::thread {
+ 
+ using WaitItem = TimerQueueWaitItem;
+ 
++// Keep both strategies in one diagnostic binary so control and treatment can
++// differ only by a cvar. Always signal the blocking strategy: this also keeps
++// a runtime cvar change from stranding a waiter that entered while enabled.
++class TimerQueueWaitStrategy {
++ public:
++  dp::sequence_t wait_until_published(
++      dp::sequence_t sequence, size_t count,
++      const std::atomic<dp::sequence_t>* const sequences[]) {
++    if (REXCVAR_GET(timer_queue_blocking_wait)) {
++      return blocking_.wait_until_published(sequence, count, sequences);
++    }
++    return spin_.wait_until_published(sequence, count, sequences);
++  }
++
++  template <typename Rep, typename Period>
++  dp::sequence_t wait_until_published(
++      dp::sequence_t sequence, size_t count,
++      const std::atomic<dp::sequence_t>* const sequences[],
++      const std::chrono::duration<Rep, Period>& timeout) {
++    if (REXCVAR_GET(timer_queue_blocking_wait)) {
++      return blocking_.wait_until_published(sequence, count, sequences,
++                                             timeout);
++    }
++    return spin_.wait_until_published(sequence, count, sequences, timeout);
++  }
++
++  template <typename Clock, typename Duration>
++  dp::sequence_t wait_until_published(
++      dp::sequence_t sequence, size_t count,
++      const std::atomic<dp::sequence_t>* const sequences[],
++      const std::chrono::time_point<Clock, Duration>& timeout_time) {
++    if (REXCVAR_GET(timer_queue_blocking_wait)) {
++      return blocking_.wait_until_published(sequence, count, sequences,
++                                             timeout_time);
++    }
++    return spin_.wait_until_published(sequence, count, sequences, timeout_time);
++  }
++
++  void signal_all_when_blocking() { blocking_.signal_all_when_blocking(); }
++
++ private:
++  dp::spin_wait_strategy spin_;
++  dp::blocking_wait_strategy blocking_;
++};
++
+ class TimerQueue {
+  public:
+   using clock = WaitItem::clock;
+@@ -142,9 +192,9 @@
+   // This ring buffer will be used to introduce timers queued by the public API
+   static constexpr size_t kWaitCount = 512;
+   dp::ring_buffer<std::shared_ptr<WaitItem>> buffer_;
+-  dp::spin_wait_strategy wait_strategy_;
+-  dp::multi_threaded_claim_strategy<dp::spin_wait_strategy> claim_strategy_;
+-  dp::sequence_barrier<dp::spin_wait_strategy> consumed_;
++  TimerQueueWaitStrategy wait_strategy_;
++  dp::multi_threaded_claim_strategy<TimerQueueWaitStrategy> claim_strategy_;
++  dp::sequence_barrier<TimerQueueWaitStrategy> consumed_;
+ 
+   // This is a _sorted_ (ascending due_) list of active timers managed by a
+   // dedicated thread

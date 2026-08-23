@@ -12,7 +12,7 @@
 #      subprocess calls and cannot fail in the dynamic linker.
 #
 # Configure standalone, never from the game's build tree:
-#   cmake -S recomp/gui -B recomp/gui/out -G Ninja
+#   cmake -S . -B out -G Ninja
 cmake_minimum_required(VERSION 3.24)
 project(thps_p8_gui LANGUAGES CXX)
 
@@ -97,13 +97,28 @@ add_executable(thps_p8_gui
   ${rmlui_SOURCE_DIR}/Backends/RmlUi_Platform_SDL.cpp
   ${rmlui_SOURCE_DIR}/Backends/RmlUi_Renderer_SDL.cpp)
 
-target_include_directories(thps_p8_gui PRIVATE ${rmlui_SOURCE_DIR}/Backends)
+# ../ so `common/supported_dumps.h` resolves. The same header, reached the same
+# way as the identity worker - a second copy of that table would mean only one of
+# the gates was ever tested.
+target_include_directories(thps_p8_gui PRIVATE
+  ${rmlui_SOURCE_DIR}/Backends
+  ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(thps_p8_gui PRIVATE rmlui_core SDL3::SDL3 SDL3_image::SDL3_image)
+
+# The one file a player needs to launch. By default it asks the existing GUI to
+# Play (which naturally falls back to first-run setup); --gui opens the normal
+# launcher. Keeping this as a thin executable preserves every existing
+# thps_p8* filename and keeps all launch policy in the launcher.
+add_executable(Project8Recomp
+  src/entry.cpp
+  src/platform.cpp)
+target_link_libraries(Project8Recomp PRIVATE SDL3::SDL3)
 
 if(WIN32)
   # ShellExecuteA, for "Open save folder". Everything else the Windows side
   # needs is in kernel32, which is linked by default.
   target_link_libraries(thps_p8_gui PRIVATE shell32)
+  target_link_libraries(Project8Recomp PRIVATE shell32)
 endif()
 
 # The install is a portable directory, so the binary has to find its libraries
@@ -111,12 +126,30 @@ endif()
 # machine that built it. Without this, a release archive runs only on the build
 # machine - and does so silently, because the developer's own system copy
 # satisfies the link.
+#
+# BUILD_WITH_INSTALL_RPATH, not just INSTALL_RPATH. This is the same correction
+# the identity worker already carries, and it was missing here for
+# the same reason it is easy to miss: INSTALL_RPATH applies on `cmake --install`,
+# and nothing ever installs this target - `make portable` copies it straight out
+# of the build tree, so the shipped binary had no $ORIGIN at all.
+#
+# On the build machine that was invisible when system SDL3 and SDL3_image
+# satisfied the link. It stops being invisible on a Steam Deck, which has
+# SDL3 at an older minor version and has never had SDL3_image: the launcher
+# would silently prefer the host's SDL3 over the bundled one and then fail
+# outright on the image codec. The release ABI gate refuses a staged build in
+# this shape rather than letting it travel.
+#
+# BUILD_RPATH_USE_ORIGIN is kept: it kills absolute build-machine paths in the
+# cases BUILD_WITH_INSTALL_RPATH does not cover.
 if(UNIX AND NOT APPLE)
-  set_target_properties(thps_p8_gui PROPERTIES
+  set_target_properties(thps_p8_gui Project8Recomp PROPERTIES
     BUILD_RPATH_USE_ORIGIN ON
+    BUILD_WITH_INSTALL_RPATH ON
     INSTALL_RPATH "$ORIGIN")
 elseif(APPLE)
-  set_target_properties(thps_p8_gui PROPERTIES
+  set_target_properties(thps_p8_gui Project8Recomp PROPERTIES
+    BUILD_WITH_INSTALL_RPATH ON
     INSTALL_RPATH "@loader_path")
 endif()
 

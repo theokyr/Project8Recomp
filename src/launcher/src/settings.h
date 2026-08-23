@@ -1,10 +1,11 @@
 // What the launcher passes to the game, and where it remembers it.
 //
-// Before this, the launcher passed exactly three flags and every session opened
-// a 720p borderless window on the primary display. That is the SDK's default
-// and it matches `make play` with no knobs, so it was never a bug - but it was
-// the most visible gap in the product, because the one thing a player expects a
-// launcher to own is which screen the game opens on and how big it is.
+// The SDK defaults to borderless fullscreen at the desktop's dimensions. A
+// requested size has no visible effect in that mode, so RenderArgv makes an
+// otherwise-unset fullscreen choice windowed whenever a size is selected.
+// Explicit fullscreen still wins. This is the one dependency between display
+// settings, and it exists so the control cannot truthfully save a value and
+// then visibly do nothing.
 //
 // The whole surface is four choices. It is deliberately not a mirror of the
 // game's cvar list: `--draw_resolution_scale_*`, `--video_mode_refresh_rate`
@@ -47,14 +48,48 @@ struct DisplayOption {
 struct Settings {
   // Empty means "whatever the game defaults to", which is the honest
   // representation of an unset preference and renders as no flag at all.
-  std::string resolution;   // "", "720p", "1080p", "1440p", "4k"
+  // Kept as `resolution` in settings.toml for v0.1.0 compatibility. What the
+  // player controls is window size: this title keeps its internal render
+  // targets fixed regardless of the guest video mode.
+  std::string resolution;   // "", "720p", "1080p", "1440p", "4k", "1280x800"
   int monitor = -1;         // -1 = unset
   int fullscreen = -1;      // -1 unset, 0 false, 1 true  (tri-state on purpose)
   int vsync = -1;           // -1 unset, 0 false, 1 true
 
+  // Performance enhancements, as one choice rather than five.
+  //
+  // -1 unset (which RenderArgv treats as ON - see below), 0 off, 1 on.
+  //
+  // These are five separate cvars in the runtime, and they are deliberately
+  // NOT exposed as five rows. `settings.h`'s rule is that this screen offers
+  // choices a player can hold an opinion about, not a mirror of the cvar list;
+  // nobody has an opinion about primitive_processor_cache_min_indices. What
+  // they have an opinion about is "make it faster" and, if something looks
+  // wrong, "stop doing that".
+  //
+  // Measured on a Steam Deck LCD 2026-08-21: 17.62 us/draw at the runtime's own
+  // defaults against 11.78 with these on, and in play the heavy-draw areas move
+  // from about 27 fps to about 40 in the busy Deck fixture.
+  //
+  // Unset means ON, which is the one place this file breaks its own
+  // omit-empty symmetry, and it does so on purpose: the runtime's defaults are
+  // off, a fresh install should be fast, and a player who has never opened this
+  // screen should not be the only one running the slow configuration.
+  int performance = -1;
+
   // The presets offered, in the order they are offered. Kept beside the struct
   // so the UI and the validator cannot disagree about what is selectable.
   static const std::vector<std::string>& ResolutionChoices();
+
+  // The cvars `performance` stands for, and the value each takes when it is on.
+  // One list, so the UI, the renderer and the test cannot disagree about what
+  // the switch means.
+  static const std::vector<std::pair<std::string, std::string>>& PerformanceFlags();
+
+  // True when a choice names an explicit WxH guest video mode rather than one
+  // of the game's named presets. The two render as different flags, so exactly
+  // one place decides which a value is.
+  static bool IsExplicitMode(const std::string& value, int* width, int* height);
 
   // True when `resolution` is one of the choices or empty. A settings file is
   // user-editable text; a hand-typed "1081p" must not reach the game's argv.

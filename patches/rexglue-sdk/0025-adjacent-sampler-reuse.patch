@@ -1,0 +1,90 @@
+diff --git a/include/rex/graphics/vulkan/command_processor.h b/include/rex/graphics/vulkan/command_processor.h
+index d422cd1..33acbb8 100644
+--- a/include/rex/graphics/vulkan/command_processor.h
++++ b/include/rex/graphics/vulkan/command_processor.h
+@@ -817,6 +817,7 @@ class VulkanCommandProcessor : public CommandProcessor {
+   // Currently used samplers.
+   std::vector<std::pair<VulkanTextureCache::SamplerParameters, VkSampler>> current_samplers_vertex_;
+   std::vector<std::pair<VulkanTextureCache::SamplerParameters, VkSampler>> current_samplers_pixel_;
++  uint64_t current_samplers_submission_ = UINT64_MAX;
+
+   // Cache render pass currently started in the command buffer with the
+   // framebuffer. For dynamic rendering, current_render_pass_ is VK_NULL_HANDLE
+diff --git a/src/graphics/vulkan/command_processor.cpp b/src/graphics/vulkan/command_processor.cpp
+index b8dc4d0..402907f 100644
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -58,6 +58,9 @@ REXCVAR_DEFINE_BOOL(gpu_timestamp_queries, false, "GPU",
+                     "publish it as the gpu_frame_us counter. Every other counter here is "
+                     "CPU-side, which on an APU is only half the picture.")
+     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
++REXCVAR_DEFINE_BOOL(gpu_sampler_set_reuse, false, "GPU/Vulkan",
++                    "EXPERIMENTAL - reuse an identical adjacent sampler set within a submission")
++    .lifecycle(rex::cvar::Lifecycle::kHotReload);
+ REXCVAR_DEFINE_BOOL(vulkan_readback_resolve, false, "GPU/Vulkan",
+                     "Read render-to-texture results on the CPU")
+     .lifecycle(rex::cvar::Lifecycle::kHotReload);
+@@ -3857,26 +3860,48 @@ bool VulkanCommandProcessor::IssueDraw(xenos::PrimitiveType prim_type, uint32_t
+     // different for some reason (like a race condition with the guest in index
+     // buffer processing in the primitive processor resulting in different host
+     // vertex shader types), the bindings will stay the same.
+-    // TODO(Triang3l): Sampler caching and reuse for adjacent draws within one
+-    // submission.
++    const bool sampler_set_reuse = REXCVAR_GET(gpu_sampler_set_reuse);
+     uint32_t samplers_overflowed_count = 0;
+     for (uint32_t j = 0; j < 2; ++j) {
+       std::vector<std::pair<VulkanTextureCache::SamplerParameters, VkSampler>>& shader_samplers =
+           j ? current_samplers_pixel_ : current_samplers_vertex_;
+-      if (!i) {
++      if (!i && !sampler_set_reuse) {
+         shader_samplers.clear();
+       }
+       const VulkanShader* shader = j ? pixel_shader : vertex_shader;
+       if (!shader) {
++        if (!i) {
++          shader_samplers.clear();
++        }
+         continue;
+       }
+       const std::vector<VulkanShader::SamplerBinding>& shader_sampler_bindings =
+           shader->GetSamplerBindingsAfterTranslation();
+       if (!i) {
+-        shader_samplers.reserve(shader_sampler_bindings.size());
+-        for (const VulkanShader::SamplerBinding& shader_sampler_binding : shader_sampler_bindings) {
+-          shader_samplers.emplace_back(texture_cache_->GetSamplerParameters(shader_sampler_binding),
+-                                       VK_NULL_HANDLE);
++        bool reuse_shader_samplers =
++            sampler_set_reuse && current_samplers_submission_ == GetCurrentSubmission() &&
++            shader_samplers.size() == shader_sampler_bindings.size();
++        if (sampler_set_reuse) {
++          shader_samplers.resize(shader_sampler_bindings.size());
++          for (size_t sampler_index = 0; sampler_index < shader_sampler_bindings.size();
++               ++sampler_index) {
++            VulkanTextureCache::SamplerParameters parameters =
++                texture_cache_->GetSamplerParameters(shader_sampler_bindings[sampler_index]);
++            reuse_shader_samplers &=
++                shader_samplers[sampler_index].first == parameters;
++            shader_samplers[sampler_index].first = parameters;
++          }
++          if (reuse_shader_samplers) {
++            continue;
++          }
++        } else {
++          shader_samplers.reserve(shader_sampler_bindings.size());
++          for (const VulkanShader::SamplerBinding& shader_sampler_binding :
++               shader_sampler_bindings) {
++            shader_samplers.emplace_back(
++                texture_cache_->GetSamplerParameters(shader_sampler_binding),
++                VK_NULL_HANDLE);
++          }
+         }
+       }
+       for (std::pair<VulkanTextureCache::SamplerParameters, VkSampler>& shader_sampler_pair :
+@@ -3904,6 +3929,7 @@ bool VulkanCommandProcessor::IssueDraw(xenos::PrimitiveType prim_type, uint32_t
+       }
+     }
+     if (!samplers_overflowed_count) {
++      current_samplers_submission_ = GetCurrentSubmission();
+       break;
+     }
+     assert_zero(i);

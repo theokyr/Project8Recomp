@@ -1,5 +1,9 @@
 #include "launcher_app.h"
 
+#include "common/supported_dumps.h"
+
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -110,7 +114,7 @@ Copy CopyFor(State s) {
       return {"The game is already running",
               "Close the running copy first, or stop it from here."};
     case State::kSettings:
-      return {"Display", "These apply the next time you press Play."};
+      return {"Settings", "These apply the next time you press Play."};
     case State::kAbout:
       return {"About", "What this is, and what it is built from."};
   }
@@ -220,18 +224,218 @@ bool LauncherApp::Initialise() {
   AttachActions(first_run_, this);
   AttachActions(home_, this);
 
-  LoadSettings(SettingsFile(), &settings_);  // absent is the common case; defaults stand
+  const bool had_settings = LoadSettings(SettingsFile(), &settings_);
   EnumerateDisplays();
+  if (!had_settings) SeedHandheldDefaults();
+
+  // Before deciding which screen to open on: an install can be complete and
+  // still be missing its marker.
+  AdoptExistingInstall();
 
   if (IsInstalled()) {
     ReadLastRun();
     ShowScreen(Screen::kHome);
     RefreshHomeState();
   } else {
+    ScanForNearbyDisc();
     ShowScreen(Screen::kFirstRun);
     SetState(State::kWelcome);
+    ShowNearbyDisc();
   }
   return true;
+}
+
+// An already-extracted game directory with no install marker.
+//
+// WHY THIS EXISTS
+//
+// IsInstalled() wants two things: `game/default.xex` and `config/install.toml`.
+// The marker is written last by the extraction step, deliberately, so that a
+// death mid-extract leaves a first-run install rather than a broken one.
+//
+// That is right for an extraction this launcher performed, and wrong for an
+// install that arrived any other way. A portable directory copied from another
+// machine, or deployed to a Steam Deck with the disc tree rsync'd in beside it,
+// has a complete and valid game and no marker - and the launcher responds by
+// asking a handheld with no keyboard to browse for a disc image it already has.
+// "Copy the folder to another device and play" is the install model this
+// project chose, so the launcher has to recognise the result of it.
+//
+// The size check is a sanity signal and explicitly NOT an identity check -
+// `supported_dumps.h` says xex_size "sharpens the 'truncated' message only".
+// Identity stays where it already is: the game's own OnConfigurePaths gate
+// hashes default.xex against the same table and exits 3 on a mismatch, and that
+// gate guards every way in. All this decides is which screen to open on, so the
+// cost of being wrong is a Play button that then refuses with a clear message,
+// not a bad launch.
+void LauncherApp::AdoptExistingInstall() {
+  std::error_code ec;
+  if (std::filesystem::exists(portable_dir_ / "config" / "install.toml", ec)) return;
+
+  const std::filesystem::path xex = portable_dir_ / "game" / "default.xex";
+  if (!std::filesystem::exists(xex, ec)) return;
+  const std::uintmax_t size = std::filesystem::file_size(xex, ec);
+  if (ec) return;
+
+  bool plausible = false;
+  for (const auto& dump : thps::identify::kSupportedDumps) {
+    if (size == dump.xex_size) {
+      plausible = true;
+      break;
+    }
+  }
+  if (!plausible) return;
+
+  std::filesystem::create_directories(portable_dir_ / "config", ec);
+  const std::filesystem::path file = portable_dir_ / "config" / "install.toml";
+  const std::filesystem::path temp = file.string() + ".new";
+  {
+    std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+    if (!out) return;
+    // `source_image` is provenance only and nothing reads it back; "adopted"
+    // records that no image was picked on this machine.
+    out << "[install]\ngame_data = \"game\"\nsource_image = \"adopted\"\n";
+    if (!out) return;
+  }
+  std::filesystem::rename(temp, file, ec);
+  if (ec) {
+    std::filesystem::remove(temp, ec);
+    return;
+  }
+  std::fprintf(stderr, "thps_p8_gui: adopted an existing game directory at %s\n",
+               (portable_dir_ / "game").string().c_str());
+}
+
+// A disc image sitting next to the launcher.
+//
+// WHY THIS EXISTS
+//
+// The install is one portable directory, and the intended shape is that a
+// player drops their own dump beside it and runs the launcher. Until now the
+// only way to say which file that was, was SDL_ShowOpenFileDialog - a file
+// browser, driven by a mouse. On a Steam Deck there is no mouse and no
+// keyboard, and a directory tree navigated with a trackpad is the worst
+// possible first thirty seconds of a port that otherwise plays with a pad.
+//
+// Scanning is cheap if it is done in the right order. Identity costs about
+// 58 ms per candidate - fine once, not fine across a Downloads folder - so the
+// size filter runs first and rejects everything that could not be this disc
+// before any subprocess is spawned. The retail image is 7.3 GB; a 6 GB floor
+// leaves room for a differently-packed dump without admitting a stray ISO.
+//
+// Deliberately NOT recursive, and deliberately only two directories. A scan
+// that wanders is a scan that hashes somebody's entire media library on
+// startup, and "why did the launcher take four minutes to open" is a much
+// worse bug than "I had to press Browse".
+void LauncherApp::ScanForNearbyDisc() {
+  // 6 GB. Below this it cannot be an XGD2 image of this title, whatever it is.
+  constexpr std::uintmax_t kMinDiscBytes = 6ull * 1000 * 1000 * 1000;
+
+  const std::filesystem::path tool =
+      platform::SiblingExe(portable_dir_, "thps_p8_identify");
+  std::error_code ec;
+  if (!std::filesystem::exists(tool, ec)) return;
+
+  std::vector<std::pair<std::uintmax_t, std::filesystem::path>> candidates;
+  for (const auto& dir : {portable_dir_, portable_dir_ / "disc"}) {
+    if (!std::filesystem::is_directory(dir, ec)) continue;
+    for (const auto& entry : std::filesystem::directory_iterator(
+             dir, std::filesystem::directory_options::skip_permission_denied, ec)) {
+      if (ec) break;
+      if (!entry.is_regular_file(ec)) continue;
+      std::string ext = entry.path().extension().string();
+      std::transform(ext.begin(), ext.end(), ext.begin(),
+                     [](unsigned char c) { return char(std::tolower(c)); });
+      if (ext != ".iso" && ext != ".img") continue;
+      const std::uintmax_t size = entry.file_size(ec);
+      if (ec || size < kMinDiscBytes) continue;
+      candidates.emplace_back(size, entry.path());
+    }
+  }
+  // Largest first: if a directory holds both a full dump and something else
+  // over the floor, the full dump is the better first guess.
+  std::sort(candidates.begin(), candidates.end(),
+            [](const auto& a, const auto& b) { return a.first > b.first; });
+
+  // Bounded regardless of what is in the directory. Four probes is a quarter
+  // of a second in the worst case.
+  constexpr size_t kMaxProbes = 4;
+  size_t probed = 0;
+  for (const auto& [size, path] : candidates) {
+    if (probed++ >= kMaxProbes) break;
+    const platform::RunResult result =
+        platform::Run({tool.string(), "--identify_disc=" + path.string(), "--json"});
+    if (result.ran && result.exit_code == 0 &&
+        result.out.find("\"verdict\": \"EXACT\"") != std::string::npos) {
+      nearby_disc_ = path.string();
+      std::fprintf(stderr, "thps_p8_gui: found a supported disc image beside "
+                           "the launcher: %s\n", nearby_disc_.c_str());
+      return;
+    }
+  }
+}
+
+// Revealed with an inline style rather than a class, because the panel these
+// live in is itself shown by a `display: flex` rule keyed on the state class;
+// a competing class rule would be a cascade argument rather than a decision.
+void LauncherApp::ShowNearbyDisc() {
+  if (!active_ || nearby_disc_.empty()) return;
+  const std::filesystem::path path(nearby_disc_);
+  SetText("nearby_text", "Found " + path.filename().string() + " next to the "
+                         "launcher.");
+  if (Rml::Element* note = active_->GetElementById("nearby")) {
+    note->SetProperty("display", "block");
+  }
+  if (Rml::Element* button = active_->GetElementById("install_nearby")) {
+    button->SetProperty("display", "inline-block");
+    // The pad lands here rather than on Browse: it is the action the player
+    // almost certainly wants, and on a handheld it is also the only one of the
+    // two that can be completed without a mouse.
+    button->Focus();
+  }
+}
+
+// First-run defaults for a handheld panel.
+//
+// The game's own default is a 720p borderless window on the primary display,
+// which is right on a desktop and wrong on a Steam Deck: a 1280x720 window on
+// a 1280x800 panel is neither fullscreen nor comfortably windowed, and there
+// is no window manager to fix it with.
+//
+// 720p fullscreen is the arm chosen here, so the guest renders a video mode
+// the 2006 title actually shipped and the compositor letterboxes it. The 16:10
+// alternative is offered in Settings; which one becomes the default is a
+// question about how the HUD and the FMVs are framed, and that is decided from
+// screenshots taken on the hardware rather than from here.
+//
+// Only ever on first run. A settings file that exists is the player's, and a
+// launcher that re-decides display settings behind somebody's back is worse
+// than one that guessed wrong once.
+void LauncherApp::SeedHandheldDefaults() {
+  if (displays_.size() < 2) return;  // index 0 is the "Game default" entry
+
+  SDL_DisplayID* ids = nullptr;
+  int count = 0;
+  ids = SDL_GetDisplays(&count);
+  if (!ids || count < 1) {
+    if (ids) SDL_free(ids);
+    return;
+  }
+  SDL_Rect bounds{};
+  const bool have = SDL_GetDisplayBounds(ids[0], &bounds);
+  SDL_free(ids);
+  if (!have) return;
+
+  // The Deck's panel exactly. Deliberately not a "small screen" heuristic:
+  // seeding settings is a decision, and it should fire on the hardware it was
+  // reasoned about rather than on anything that happens to be short.
+  if (bounds.w != 1280 || bounds.h != 800) return;
+
+  settings_.resolution = "720p";
+  settings_.fullscreen = 1;
+  SaveSettings(SettingsFile(), settings_);
+  std::fprintf(stderr, "thps_p8_gui: 1280x800 panel detected; defaulting to "
+                       "720p fullscreen\n");
 }
 
 void LauncherApp::EnumerateDisplays() {
@@ -299,7 +503,7 @@ void LauncherApp::SetState(State state) {
     case State::kDebris: SetText("status_pill", "Needs a moment"); break;
     case State::kBlocked: SetText("status_pill", "Already running"); break;
     case State::kStarting: SetText("status_pill", "Starting"); break;
-    case State::kSettings: SetText("status_pill", "Display"); break;
+    case State::kSettings: SetText("status_pill", "Settings"); break;
     case State::kAbout: SetText("status_pill", "About"); break;
     default: break;
   }
@@ -487,7 +691,13 @@ void LauncherApp::Poll() {
 void LauncherApp::OnAction(const Rml::String& id) {
   if (HandleSettingsAction(id)) return;
 
-  if (id == "browse" || id == "retry") {
+  if (id == "install_nearby") {
+    // Straight to VerifyPicked, which is the same entry point the file dialog
+    // uses - the scan already proved this file is EXACT, but identity is cheap
+    // and going through one path means the free-space gate, the failure states
+    // and the extraction cannot differ between the two ways in.
+    if (!nearby_disc_.empty()) VerifyPicked(nearby_disc_);
+  } else if (id == "browse" || id == "retry") {
     BeginPick();
   } else if (id == "continue_home") {
     ShowScreen(Screen::kHome);
@@ -569,6 +779,9 @@ void LauncherApp::RenderSettingsPanel() {
   SetText("set_vsync_value", settings_.vsync == -1  ? "Game default"
                              : settings_.vsync == 1 ? "On"
                                                     : "Off");
+
+  // Unset reads as On, because that is what RenderArgv does with it.
+  SetText("set_performance_value", settings_.performance == 0 ? "Off" : "On");
 }
 
 bool LauncherApp::HandleSettingsAction(const Rml::String& id) {
@@ -595,6 +808,12 @@ bool LauncherApp::HandleSettingsAction(const Rml::String& id) {
     settings_.fullscreen = cycle_tri(settings_.fullscreen);
   } else if (id == "set_vsync" || id == "set_vsync_value") {
     settings_.vsync = cycle_tri(settings_.vsync);
+  } else if (id == "set_performance" || id == "set_performance_value") {
+    // Two states, not three. The other rows have a meaningful "leave it to the
+    // game"; this one does not, because unset already means on - a third label
+    // saying "Game default" next to a value of On would be a distinction with
+    // no difference and one more press to get past.
+    settings_.performance = (settings_.performance == 0) ? 1 : 0;
   } else {
     return false;  // not a settings control; let the caller handle it
   }

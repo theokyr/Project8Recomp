@@ -1,0 +1,30 @@
+diff --git a/src/core/threading_posix.cpp b/src/core/threading_posix.cpp
+index 17c9609..ee2d1aa 100644
+--- a/src/core/threading_posix.cpp
++++ b/src/core/threading_posix.cpp
+@@ -1028,11 +1028,22 @@ std::chrono::milliseconds ComputeAlertableWaitTimeout(
+   if (deadline == std::chrono::steady_clock::time_point::max()) {
+     return kAlertablePollSlice;
+   }
+-  auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+-      deadline - std::chrono::steady_clock::now());
+-  if (remaining <= std::chrono::milliseconds::zero()) {
++  auto remaining_native = deadline - std::chrono::steady_clock::now();
++  if (remaining_native <= std::chrono::steady_clock::duration::zero()) {
+     return std::chrono::milliseconds::zero();
+   }
++  // Round UP to a whole millisecond rather than truncating. Truncation returns
++  // zero for any sub-millisecond remainder, which makes the inner wait return
++  // instantly and the alertable loop above spin out the tail of every wait.
++  // Same bug as the poll sleep this file used to have; the cost here is bounded
++  // to the last sub-millisecond of each wait rather than every 1 ms slice, so
++  // it is far smaller - but it is the same mistake. Overshooting the caller's
++  // deadline by under a millisecond is harmless: the loop re-checks
++  // HasAlertableTimeoutElapsed before waiting again.
++  auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(remaining_native);
++  if (remaining < std::chrono::milliseconds(1)) {
++    remaining = std::chrono::milliseconds(1);
++  }
+   return std::min(remaining, kAlertablePollSlice);
+ }
+ 

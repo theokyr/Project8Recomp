@@ -1,0 +1,112 @@
+diff --git a/include/rex/graphics/vulkan/texture_cache.h b/include/rex/graphics/vulkan/texture_cache.h
+--- a/include/rex/graphics/vulkan/texture_cache.h
++++ b/include/rex/graphics/vulkan/texture_cache.h
+@@ -269,6 +269,11 @@ class VulkanTextureCache final : public TextureCache {
+     Usage usage_ = Usage::kUndefined;
+ 
+     std::unordered_map<ViewKey, VkImageView, ViewKey::Hasher> views_;
++    bool last_view_request_valid_ = false;
++    bool last_view_request_is_signed_ = false;
++    bool last_view_request_is_array_ = true;
++    uint32_t last_view_request_host_swizzle_ = 0;
++    VkImageView last_view_request_view_ = VK_NULL_HANDLE;
+     std::unique_ptr<VulkanTexture> texture_3d_as_2d_;
+     VkImageView image_view_3d_as_2d_unsigned_ = VK_NULL_HANDLE;
+     VkImageView image_view_3d_as_2d_signed_ = VK_NULL_HANDLE;
+diff --git a/src/graphics/vulkan/texture_cache.cpp b/src/graphics/vulkan/texture_cache.cpp
+--- a/src/graphics/vulkan/texture_cache.cpp
++++ b/src/graphics/vulkan/texture_cache.cpp
+@@ -11,6 +11,7 @@
+ 
+ #include <algorithm>
+ #include <array>
++#include <atomic>
+ #include <cstddef>
+ #include <cstring>
+ #include <utility>
+@@ -37,9 +38,31 @@
+ REXCVAR_DEFINE_BOOL(non_seamless_cube_map, false, "GPU", "Use non-seamless cube map sampling");
+ REXCVAR_DEFINE_BOOL(gpu_texture_request_reuse, false, "GPU/Vulkan",
+                     "Reuse an exactly unchanged texture request within one submission");
++REXCVAR_DEFINE_BOOL(gpu_texture_last_view_cache, false, "GPU/Vulkan",
++                    "Reuse a texture's most recent exactly matching Vulkan image view request");
++REXCVAR_DEFINE_BOOL(gpu_texture_last_view_cache_stats, false, "GPU/Vulkan",
++                    "Log texture last-view-cache engagement counters");
+ 
+ namespace rex::graphics::vulkan {
+ 
++namespace {
++
++std::atomic<uint64_t> g_texture_last_view_requests{0};
++std::atomic<uint64_t> g_texture_last_view_hits{0};
++
++void NoteTextureLastViewRequest(bool hit) {
++  uint64_t requests = g_texture_last_view_requests.fetch_add(1, std::memory_order_relaxed) + 1;
++  if (!hit) {
++    return;
++  }
++  uint64_t hits = g_texture_last_view_hits.fetch_add(1, std::memory_order_relaxed) + 1;
++  if (hits == 1 || (hits & ((UINT64_C(1) << 20) - 1)) == 0) {
++    REXGPU_INFO("gpu_texture_last_view_cache: {} hits / {} requests", hits, requests);
++  }
++}
++
++}  // namespace
++
+ // Generated with `xb buildshaders`.
+ namespace shaders {
+ #include "../shaders/vulkan_spirv/texture_load_128bpb_cs.h"
+@@ -1880,6 +1903,25 @@ VulkanTextureCache::VulkanTexture::~VulkanTexture() {
+ 
+ VkImageView VulkanTextureCache::VulkanTexture::GetView(bool is_signed, uint32_t host_swizzle,
+                                                        bool is_array) {
++  const bool last_view_cache_enabled = REXCVAR_GET(gpu_texture_last_view_cache);
++  const bool last_view_cache_stats =
++      last_view_cache_enabled && REXCVAR_GET(gpu_texture_last_view_cache_stats);
++  if (last_view_cache_enabled && last_view_request_valid_ &&
++      last_view_request_is_signed_ == is_signed &&
++      last_view_request_host_swizzle_ == host_swizzle && last_view_request_is_array_ == is_array) {
++    if (last_view_cache_stats) {
++      NoteTextureLastViewRequest(true);
++    }
++    PROFILE_TEXTURE_CACHE_HIT();
++    return last_view_request_view_;
++  }
++  if (last_view_cache_stats) {
++    NoteTextureLastViewRequest(false);
++  }
++
++  const bool request_is_signed = is_signed;
++  const uint32_t request_host_swizzle = host_swizzle;
++  const bool request_is_array = is_array;
+   xenos::DataDimension dimension = key().dimension;
+   if (dimension == xenos::DataDimension::k3D || dimension == xenos::DataDimension::kCube) {
+     is_array = false;
+@@ -1917,6 +1959,13 @@ VkImageView VulkanTextureCache::VulkanTexture::GetView(bool is_signed, uint32_t
+   // Try to find an existing view.
+   auto it = views_.find(view_key);
+   if (it != views_.end()) {
++    if (last_view_cache_enabled) {
++      last_view_request_valid_ = true;
++      last_view_request_is_signed_ = request_is_signed;
++      last_view_request_host_swizzle_ = request_host_swizzle;
++      last_view_request_is_array_ = request_is_array;
++      last_view_request_view_ = it->second;
++    }
+     PROFILE_TEXTURE_CACHE_HIT();
+     return it->second;
+   }
+@@ -1961,6 +2010,13 @@ VkImageView VulkanTextureCache::VulkanTexture::GetView(bool is_signed, uint32_t
+     return VK_NULL_HANDLE;
+   }
+   views_.emplace(view_key, view);
++  if (last_view_cache_enabled) {
++    last_view_request_valid_ = true;
++    last_view_request_is_signed_ = request_is_signed;
++    last_view_request_host_swizzle_ = request_host_swizzle;
++    last_view_request_is_array_ = request_is_array;
++    last_view_request_view_ = view;
++  }
+   return view;
+ }
+ 

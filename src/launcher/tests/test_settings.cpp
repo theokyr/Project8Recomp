@@ -133,6 +133,135 @@ void TestUnsetSurvivesRoundTripAsUnset() {
   Check(back.vsync == -1, "unset vsync stays unset, not false");
 }
 
+void TestExplicitModeRendersAsAVideoMode() {
+  // 1280x800 is the Steam Deck's panel and is NOT one of --resolution's named
+  // presets, which are all 16:9. It has to reach the game as an explicit guest
+  // video mode instead; rendering it as `--resolution=1280x800` would be
+  // rejected by the runtime's own validation, and a launcher whose Play button
+  // produces a flag the game refuses is worse than one that never offered it.
+  thps::Settings settings;
+  settings.resolution = "1280x800";
+  const std::vector<std::string> argv = thps::RenderArgv(Paths(), settings);
+  Check(Has(argv, "--window_width=1280"), "explicit mode renders a window width");
+  Check(Has(argv, "--window_height=800"), "explicit mode renders a window height");
+  Check(Has(argv, "--video_mode_width=1280"), "explicit mode renders a width");
+  Check(Has(argv, "--video_mode_height=800"), "explicit mode renders a height");
+  Check(Has(argv, "--fullscreen=false"),
+        "a selected size becomes visible when fullscreen was unset");
+  Check(!Has(argv, "--resolution=1280x800"),
+        "an explicit mode is never rendered as a --resolution preset");
+  Check(!AnyEmptyValuedFlag(argv), "no empty-valued flag for an explicit mode");
+
+  // The named presets must not have started going down the new path.
+  thps::Settings preset;
+  preset.resolution = "720p";
+  const std::vector<std::string> preset_argv = thps::RenderArgv(Paths(), preset);
+  Check(Has(preset_argv, "--resolution=720p"), "a named preset still renders as one");
+  Check(!Has(preset_argv, "--video_mode_width=1280"),
+        "a named preset does not also emit a video mode");
+  Check(Has(preset_argv, "--fullscreen=false"),
+        "a named size also becomes visible when fullscreen was unset");
+}
+
+void TestExplicitFullscreenWinsOverWindowSizeDefault() {
+  thps::Settings settings;
+  settings.resolution = "1080p";
+  settings.fullscreen = 1;
+  const std::vector<std::string> argv = thps::RenderArgv(Paths(), settings);
+  Check(Has(argv, "--resolution=1080p"), "the selected size is still passed");
+  Check(Has(argv, "--fullscreen=true"), "explicit fullscreen wins");
+  Check(!Has(argv, "--fullscreen=false"),
+        "the implicit windowed flag is not emitted beside explicit fullscreen");
+}
+
+void TestExplicitModeSurvivesValidation() {
+  // Sanitise() drops anything not in ResolutionChoices(), so a new choice that
+  // was added to the list but not to the validator would be silently erased on
+  // the way to argv - the failure would look like "the setting does not stick".
+  thps::Settings settings;
+  settings.resolution = "1280x800";
+  Check(settings.Valid(), "1280x800 is a valid choice");
+  settings.Sanitise();
+  Check(settings.resolution == "1280x800", "1280x800 survives Sanitise");
+
+  const thps::Settings back =
+      thps::ParseSettings(thps::SerialiseSettings(settings));
+  Check(back.resolution == "1280x800", "1280x800 survives a file round trip");
+
+  // And a hand-typed near-miss still does not reach argv.
+  thps::Settings typo;
+  typo.resolution = "1280x801";
+  Check(!typo.Valid(), "an unlisted WxH is not valid just because it parses");
+  typo.Sanitise();
+  Check(typo.resolution.empty(), "an unlisted WxH sanitises away");
+}
+
+void TestPerformanceIsOnUnlessTurnedOff() {
+  // The asymmetry this file exists to police, applied deliberately once: every
+  // other setting emits nothing when unset, and this one emits its flags. A
+  // fresh install must be fast without anyone opening the settings screen.
+  const std::vector<std::string> unset = thps::RenderArgv(Paths(), thps::Settings{});
+  Check(Has(unset, "--gpu_cp_fastpath=true"),
+        "unset performance still enables the fastpath");
+  Check(Has(unset, "--primitive_processor_cache_min_indices=4096"),
+        "unset performance still sets the primitive processor cache threshold");
+  Check(Has(unset, "--gpu_native_residency=true"),
+        "unset performance still enables native residency");
+  Check(Has(unset, "--gpu_native_prefetch=true"),
+        "unset performance still enables frame-ahead vertex prefetch");
+  Check(Has(unset, "--gpu_sampler_set_reuse=true"),
+        "unset performance still enables adjacent sampler reuse");
+  Check(Has(unset, "--gpu_texture_request_reuse=true"),
+        "unset performance still enables exact texture-request reuse");
+  Check(Has(unset, "--gpu_texture_last_view_cache=true"),
+        "unset performance still enables exact last-view reuse");
+  Check(Has(unset, "--timer_queue_blocking_wait=true"),
+        "unset performance still blocks the idle timer queue");
+  Check(Has(unset, "--guest_ring_wait_backoff=true"),
+        "unset performance still backs off the guest empty-ring wait");
+  Check(Has(unset, "--guest_ring_wait_event=true"),
+        "unset performance still blocks on the guest ring producer");
+  Check(Has(unset, "--guest_swap_wait=true"),
+        "unset performance still blocks on guest swap completion");
+  Check(Has(unset, "--guest_u8x4_unpack_native=true"),
+        "unset performance still enables the exact u8x4 unpack");
+  Check(Has(unset, "--guest_vertex_unpack_native=true"),
+        "unset performance still enables the exact vertex-record unpack");
+  Check(Has(unset, "--guest_vertex_unpack_simd=true"),
+        "unset performance still enables the exact SIMD vertex-record unpack");
+
+  thps::Settings on;
+  on.performance = 1;
+  Check(thps::RenderArgv(Paths(), on).size() == unset.size(),
+        "explicitly on renders the same argv as unset");
+
+  // Off must emit NOTHING, not `=false`: the runtime's own defaults are already
+  // off, and emitting the negation would be a second way to say the same thing.
+  thps::Settings off;
+  off.performance = 0;
+  const std::vector<std::string> argv = thps::RenderArgv(Paths(), off);
+  for (const auto& [name, value] : thps::Settings::PerformanceFlags()) {
+    (void)value;
+    for (const std::string& arg : argv) {
+      Check(arg.rfind("--" + name + "=", 0) != 0,
+            ("off emits no flag for " + name).c_str());
+    }
+  }
+  Check(!AnyEmptyValuedFlag(argv), "no empty-valued flag with performance off");
+}
+
+void TestPerformanceSurvivesARoundTrip() {
+  thps::Settings off;
+  off.performance = 0;
+  Check(thps::ParseSettings(thps::SerialiseSettings(off)).performance == 0,
+        "performance=off survives a round trip");
+  // Unset must NOT be written, or it would freeze today's meaning of "unset"
+  // into the file and stop tracking the default.
+  Check(thps::SerialiseSettings(thps::Settings{}).find("performance") ==
+            std::string::npos,
+        "unset performance is not written to the file");
+}
+
 void TestUnknownKeysAreIgnored() {
   // A settings file written by a newer build must still load in an older one.
   const thps::Settings settings = thps::ParseSettings(
@@ -150,6 +279,11 @@ int main() {
   TestInvalidSettingsAreDroppedNotPassed();
   TestRoundTrip();
   TestUnsetSurvivesRoundTripAsUnset();
+  TestPerformanceIsOnUnlessTurnedOff();
+  TestPerformanceSurvivesARoundTrip();
+  TestExplicitModeRendersAsAVideoMode();
+  TestExplicitModeSurvivesValidation();
+  TestExplicitFullscreenWinsOverWindowSizeDefault();
   TestUnknownKeysAreIgnored();
 
   if (g_failures) {

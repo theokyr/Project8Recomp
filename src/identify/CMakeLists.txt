@@ -1,10 +1,10 @@
 # thps_p8_identify - the launcher's SDK-side worker.
 #
-# Its own project, like recomp/gui/, but for the opposite reason: the GUI must
-# link no SDK, and this must link one. Keeping them apart is what lets the GUI
-# stay a UI over two subprocess calls.
+# Its own project for the opposite reason from the GUI: the GUI must link no
+# SDK, and this must link one. Keeping them apart is what lets the GUI stay a UI
+# over two subprocess calls.
 #
-#   cmake -S recomp/identify -B recomp/identify/out -G Ninja \
+#   cmake -S src/identify -B build/identify -G Ninja \
 #         -DTHPS_P8_SDK_ROOT=<path to a rexglue SDK prefix>
 cmake_minimum_required(VERSION 3.24)
 project(thps_p8_identify LANGUAGES CXX)

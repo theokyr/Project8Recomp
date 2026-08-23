@@ -47,6 +47,11 @@ includes = []
 #cr_as_local = true
 #reserved_as_local = true
 #non_argument_as_local = true
+# `non_volatile_as_local` alone was measured on corrected 0.9.0-dev codegen on
+# 2026-08-23. Its isolated flag-off control reproduced the accepted binary
+# byte-for-byte, but the localized build froze after Vulkan swapchain creation
+# with zero frame rows and peak zero draws. See disproved.md D27; do not enable.
+#non_volatile_as_local = true
 
 # Tail-call targets the analyser reached via unconditional 'b' but never
 # discovered as function starts. Measured from this project's own codegen

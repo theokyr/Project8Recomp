@@ -12,6 +12,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -32,8 +33,62 @@
 
 namespace {
 
-constexpr int kDefaultWidth = 1280;
-constexpr int kDefaultHeight = 720;
+// The launcher's own window. 1280x800 is the ceiling rather than the size,
+// because the number that matters is the Steam Deck's panel: 1280x800, with no
+// window manager decoration a player can drag and no keyboard to resize with.
+// A 1280x720 window on that panel leaves the launcher sitting under a KDE
+// panel with its bottom row of controls unreachable in the hand.
+//
+// Clamping to the display's *usable* bounds rather than its full bounds is the
+// part that matters on a desktop: usable excludes panels and docks, so the
+// launcher never opens larger than the space it actually has.
+constexpr int kMaxWidth = 1280;
+constexpr int kMaxHeight = 800;
+
+// At or below this, the display is a handheld panel rather than a desktop and
+// the launcher takes the whole of it. The Deck's 1280x800 is the case in hand;
+// the comparison is against the display's FULL bounds, not the usable ones, so
+// a small window on a large desktop never trips it.
+constexpr int kHandheldWidth = 1280;
+constexpr int kHandheldHeight = 800;
+
+struct WindowGeometry {
+  int width = kMaxWidth;
+  int height = kMaxHeight;
+  bool fullscreen = false;
+};
+
+// Sized from the display the launcher will actually open on. SDL reports
+// usable bounds in the same coordinates SDL_CreateWindow takes, so no DPI
+// arithmetic is needed here - SDL_WINDOW_HIGH_PIXEL_DENSITY handles the rest.
+WindowGeometry ResolveWindowGeometry() {
+  WindowGeometry geometry;
+  int count = 0;
+  SDL_DisplayID* displays = SDL_GetDisplays(&count);
+  if (!displays || count < 1) {
+    if (displays) SDL_free(displays);
+    return geometry;  // no displays enumerated: keep the conservative default
+  }
+  const SDL_DisplayID primary = displays[0];
+  SDL_free(displays);
+
+  SDL_Rect usable{};
+  SDL_Rect full{};
+  const bool have_usable = SDL_GetDisplayUsableBounds(primary, &usable);
+  const bool have_full = SDL_GetDisplayBounds(primary, &full);
+
+  if (have_usable && usable.w > 0 && usable.h > 0) {
+    geometry.width = std::min(kMaxWidth, usable.w);
+    geometry.height = std::min(kMaxHeight, usable.h);
+  }
+  if (have_full && full.w > 0 && full.h > 0 &&
+      full.w <= kHandheldWidth && full.h <= kHandheldHeight) {
+    geometry.fullscreen = true;
+    geometry.width = full.w;
+    geometry.height = full.h;
+  }
+  return geometry;
+}
 
 // Every RCSS parse failure and every RML structural complaint arrives through
 // LogMessage. The old UI stack shipped 81 of these and nobody noticed, because
@@ -101,11 +156,23 @@ Rml::Input::KeyIdentifier GamepadButtonToKey(Uint8 button) {
   }
 }
 
+bool WantsDirectPlay(int argc, char** argv) {
+  for (int i = 1; i < argc; ++i) {
+    if (std::strcmp(argv[i], "--play") == 0) return true;
+  }
+  return false;
+}
+
+bool HasPortableInstall(const std::filesystem::path& root) {
+  std::error_code ec;
+  return std::filesystem::exists(root / "config" / "install.toml", ec) &&
+         std::filesystem::exists(root / "game" / "default.xex", ec);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
-  (void)argc;
-  (void)argv;
+  const bool direct_play = WantsDirectPlay(argc, argv);
 
   if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
     std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -115,8 +182,12 @@ int main(int argc, char** argv) {
   // Resolved before the window exists, because the window icon comes out of it.
   const std::filesystem::path assets_for_icon = ResolveAssetRoot();
 
-  SDL_Window* window = SDL_CreateWindow("Tony Hawk's Project 8", kDefaultWidth, kDefaultHeight,
-                                        SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+  const WindowGeometry geometry = ResolveWindowGeometry();
+  SDL_WindowFlags window_flags =
+      SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+  if (geometry.fullscreen) window_flags |= SDL_WINDOW_FULLSCREEN;
+  SDL_Window* window = SDL_CreateWindow("Tony Hawk's Project 8", geometry.width,
+                                        geometry.height, window_flags);
   if (!window) {
     std::fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
     SDL_Quit();
@@ -184,8 +255,11 @@ int main(int argc, char** argv) {
     }
   }
 
-  int pixel_w = kDefaultWidth;
-  int pixel_h = kDefaultHeight;
+  // Seeded from the geometry actually requested, so a SDL_GetWindowSizeInPixels
+  // that declines to answer leaves the context sized like the window rather
+  // than like a constant that has nothing to do with it.
+  int pixel_w = geometry.width;
+  int pixel_h = geometry.height;
   SDL_GetWindowSizeInPixels(window, &pixel_w, &pixel_h);
 
   Rml::Context* context = Rml::CreateContext("launcher", Rml::Vector2i(pixel_w, pixel_h));
@@ -229,6 +303,9 @@ int main(int argc, char** argv) {
   // not depend on one. Drives the real action, not a shortcut around it.
   if (const char* action = SDL_getenv("THPS_P8_GUI_TEST_ACTION")) {
     app.OnAction(action);
+  }
+  if (direct_play && HasPortableInstall(portable_dir)) {
+    app.OnAction("play");
   }
 
   std::unordered_map<SDL_JoystickID, SDL_Gamepad*> pads;

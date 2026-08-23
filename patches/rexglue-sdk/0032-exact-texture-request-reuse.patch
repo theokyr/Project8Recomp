@@ -1,0 +1,105 @@
+diff --git a/src/graphics/vulkan/texture_cache.cpp b/src/graphics/vulkan/texture_cache.cpp
+index 76802e9..d5ef40b 100644
+--- a/src/graphics/vulkan/texture_cache.cpp
++++ b/src/graphics/vulkan/texture_cache.cpp
+@@ -35,6 +35,8 @@
+ #include <rex/ui/vulkan/util.h>
+ 
+ REXCVAR_DEFINE_BOOL(non_seamless_cube_map, false, "GPU", "Use non-seamless cube map sampling");
++REXCVAR_DEFINE_BOOL(gpu_texture_request_reuse, false, "GPU/Vulkan",
++                    "Reuse an exactly unchanged texture request within one submission");
+ 
+ namespace rex::graphics::vulkan {
+ 
+@@ -525,6 +527,7 @@ void VulkanTextureCache::BeginSubmission(uint64_t new_submission_index) {
+ void VulkanTextureCache::BeginFrame() {
+   TextureCache::BeginFrame();
+ 
++  texture_request_reuse_valid_ = false;
+   std::memset(unsupported_format_features_used_, 0, sizeof(unsupported_format_features_used_));
+ }
+ 
+@@ -552,6 +555,15 @@ void VulkanTextureCache::RequestTextures(uint32_t used_texture_mask) {
+   SCOPE_profile_cpu_f("gpu");
+ #endif  // XE_GPU_FINE_GRAINED_DRAW_SCOPES
+ 
++  const bool reuse_enabled = REXCVAR_GET(gpu_texture_request_reuse);
++  if (reuse_enabled && texture_request_reuse_valid_ &&
++      texture_request_reuse_mask_ == used_texture_mask &&
++      texture_request_reuse_submission_ == current_submission_index() &&
++      texture_request_reuse_usage_epoch_ == texture_usage_epoch_ &&
++      AreTextureBindingsInSync(used_texture_mask) && !texture_became_outdated()) {
++    return;
++  }
++
+   TextureCache::RequestTextures(used_texture_mask);
+ 
+   // Pre-create 3D-as-2D wrappers while still in texture request phase.
+@@ -623,6 +635,15 @@ void VulkanTextureCache::RequestTextures(uint32_t used_texture_mask) {
+       }
+     }
+   }
++
++  if (reuse_enabled) {
++    texture_request_reuse_valid_ = true;
++    texture_request_reuse_mask_ = used_texture_mask;
++    texture_request_reuse_submission_ = current_submission_index();
++    texture_request_reuse_usage_epoch_ = texture_usage_epoch_;
++  } else {
++    texture_request_reuse_valid_ = false;
++  }
+ }
+ 
+ VkImageView VulkanTextureCache::GetActiveBindingOrNullImageView(uint32_t fetch_constant_index,
+diff --git a/include/rex/graphics/vulkan/texture_cache.h b/include/rex/graphics/vulkan/texture_cache.h
+index 04856ee..a3cfc6d 100644
+--- a/include/rex/graphics/vulkan/texture_cache.h
++++ b/include/rex/graphics/vulkan/texture_cache.h
+@@ -205,7 +205,10 @@ class VulkanTextureCache final : public TextureCache {
+     // Doesn't transition (the caller must insert the barrier).
+     Usage SetUsage(Usage new_usage) {
+       Usage old_usage = usage_;
+-      usage_ = new_usage;
++      if (old_usage != new_usage) {
++        usage_ = new_usage;
++        ++static_cast<VulkanTextureCache&>(texture_cache()).texture_usage_epoch_;
++      }
+       return old_usage;
+     }
+ 
+@@ -362,6 +365,16 @@ class VulkanTextureCache final : public TextureCache {
+ 
+   std::array<VulkanTextureBinding, xenos::kTextureFetchConstantCount> vulkan_texture_bindings_;
+ 
++  // RequestTextures performs no observable work when every binding and image
++  // usage is exactly unchanged within one submission. Track all Vulkan image
++  // usage transitions with one generation so the common adjacent request can
++  // reject in constant time without walking the mask twice.
++  uint64_t texture_usage_epoch_ = 1;
++  bool texture_request_reuse_valid_ = false;
++  uint32_t texture_request_reuse_mask_ = 0;
++  uint64_t texture_request_reuse_submission_ = 0;
++  uint64_t texture_request_reuse_usage_epoch_ = 0;
++
+   // Unsupported texture formats used during this frame (for research and
+   // testing).
+   enum : uint8_t {
+diff --git a/include/rex/graphics/pipeline/texture/cache.h b/include/rex/graphics/pipeline/texture/cache.h
+index d1580fc..24a25bd 100644
+--- a/include/rex/graphics/pipeline/texture/cache.h
++++ b/include/rex/graphics/pipeline/texture/cache.h
+@@ -545,6 +545,14 @@ class TextureCache {
+   // implementation to update the internal dependencies of the binding.
+   virtual void UpdateTextureBindingsImpl(uint32_t /*fetch_constant_mask*/) {}
+ 
++  uint64_t current_submission_index() const { return current_submission_index_; }
++  bool AreTextureBindingsInSync(uint32_t fetch_constant_mask) const {
++    return (texture_bindings_in_sync_ & fetch_constant_mask) == fetch_constant_mask;
++  }
++  bool texture_became_outdated() const {
++    return texture_became_outdated_.load(std::memory_order_acquire);
++  }
++
+  private:
+   struct PendingTextureLoad {
+     Texture* texture = nullptr;

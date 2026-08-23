@@ -1,0 +1,119 @@
+diff --git a/src/graphics/vulkan/native_residency.h b/src/graphics/vulkan/native_residency.h
+index 03f76b4..89aab50 100644
+--- a/src/graphics/vulkan/native_residency.h
++++ b/src/graphics/vulkan/native_residency.h
+@@ -11,6 +11,7 @@
+  * alongside it.
+  */
+ 
++#include <array>
+ #include <cstdint>
+ #include <unordered_map>
+ #include <vector>
+@@ -168,6 +169,8 @@ class NativeResidency {
+   static constexpr uint32_t kResolvePageCount = SharedMemory::kBufferSize >> kResolvePageSizeLog2;
+   static constexpr size_t kResolvePageWords = kResolvePageCount / 64;
+   static constexpr size_t kExpectedFrameRangeCount = 4096;
++  static constexpr size_t kRangeCacheSetBits = 12;
++  static constexpr size_t kRangeCacheSetCount = size_t{1} << kRangeCacheSetBits;
+ 
+   // Fingerprint entries older than this many frames are dropped, so that a
+   // level transition's worth of dead geometry does not stay in the table for
+@@ -278,6 +281,20 @@ class NativeResidency {
+   // every hit path in RequestVertexRange.
+   std::unordered_map<uint64_t, Entry> range_table_;
+ 
++  // A frame can cycle thousands of ranges through only 96 hardware fetch
++  // slots, so a pointer retained per slot thrashes. Keep a small two-way
++  // front-cache keyed by the complete range instead. The table node still
++  // owns the entry and encounter order remains in current_frame_ranges_. Any
++  // table erase bumps range_table_generation_, conservatively invalidating
++  // every cached pointer before it can be dereferenced.
++  struct CachedVertexRange {
++    uint64_t key = 0;
++    uint64_t generation = 0;
++    Entry* entry = nullptr;
++  };
++  std::array<std::array<CachedVertexRange, 2>, kRangeCacheSetCount> cached_vertex_ranges_{};
++  uint64_t range_table_generation_ = 1;
++
+   struct VertexRange {
+     uint32_t start;
+     uint32_t length;
+diff --git a/src/graphics/vulkan/native_residency.cc b/src/graphics/vulkan/native_residency.cc
+index 30ed8b8..6e172c5 100644
+--- a/src/graphics/vulkan/native_residency.cc
++++ b/src/graphics/vulkan/native_residency.cc
+@@ -83,17 +83,25 @@ void NativeResidency::LatchFrameModeAtSwap() {
+     // ranges, and a fingerprint says what guest memory held, not what the
+     // buffer holds. Cheaper to re-copy the first frame than to reason about it.
+     range_table_.clear();
++    ++range_table_generation_;
+     latch_streak_ = 0;
+   } else if (native_frame_ && !(frame_epoch_ & (kEntrySweepPeriodFrames - 1))) {
+     // Periodic eviction rather than per-frame, because it walks the table.
++    bool erased_entry = false;
+     for (auto it = range_table_.begin(); it != range_table_.end();) {
+       // A range recorded in the frame that just ended owns a stable Entry*
+       // carried into the prefetch wave below. Do not invalidate it during the
+       // periodic sweep; PrefetchFrame stamps last_epoch immediately after.
+       bool recorded_for_prefetch = it->second.prefetch_record_epoch + 1 == frame_epoch_;
+-      it = (!recorded_for_prefetch && frame_epoch_ - it->second.last_epoch > kEntryMaxAgeFrames)
+-               ? range_table_.erase(it)
+-               : std::next(it);
++      if (!recorded_for_prefetch && frame_epoch_ - it->second.last_epoch > kEntryMaxAgeFrames) {
++        it = range_table_.erase(it);
++        erased_entry = true;
++      } else {
++        it = std::next(it);
++      }
++    }
++    if (erased_entry) {
++      ++range_table_generation_;
+     }
+   }
+ 
+@@ -264,7 +272,9 @@ NativeResidency::VertexRangeResult NativeResidency::RequestVertexRange(memory::M
+     // Paranoia mode: no fingerprint is believed, every request copies. Nothing
+     // is recorded either, so that turning dedup back on starts from a clean
+     // table rather than from entries that were never maintained.
+-    range_table_.erase(key);
++    if (range_table_.erase(key)) {
++      ++range_table_generation_;
++    }
+     Entry scratch;
+     return UploadRange(memory, shared_memory, start, length, scratch, 0, false)
+                ? VertexRangeResult::kNative
+@@ -272,10 +282,28 @@ NativeResidency::VertexRangeResult NativeResidency::RequestVertexRange(memory::M
+   }
+ 
+   // The residency entry is also the first-seen marker for next-frame
+-  // prefetch. Its node address survives rehash, so the prefetch wave and the
+-  // request below reuse this one lookup without changing encounter order.
+-  auto [it, inserted] = range_table_.try_emplace(key, Entry{});
+-  Entry& entry = it->second;
++  // prefetch. Retain hot node pointers in a two-way cache in front of the map.
++  // Nodes survive rehash; any erase invalidates all handles through
++  // range_table_generation_. Mixing both halves of the range key avoids the
++  // repeated buffer sizes clustering in the low bits.
++  uint64_t cache_hash = (key ^ (key >> 32)) * UINT64_C(11400714819323198485);
++  auto& cached_set = cached_vertex_ranges_[cache_hash >> (64 - kRangeCacheSetBits)];
++  Entry* entry_pointer = nullptr;
++  bool inserted = false;
++  if (cached_set[0].generation == range_table_generation_ && cached_set[0].key == key) {
++    entry_pointer = cached_set[0].entry;
++  } else if (cached_set[1].generation == range_table_generation_ && cached_set[1].key == key) {
++    std::swap(cached_set[0], cached_set[1]);
++    entry_pointer = cached_set[0].entry;
++  }
++  if (!entry_pointer) {
++    auto [it, was_inserted] = range_table_.try_emplace(key, Entry{});
++    entry_pointer = &it->second;
++    inserted = was_inserted;
++    cached_set[1] = cached_set[0];
++    cached_set[0] = {key, range_table_generation_, entry_pointer};
++  }
++  Entry& entry = *entry_pointer;
+   if (prefetch_frame_ && entry.prefetch_record_epoch != frame_epoch_) {
+     entry.prefetch_record_epoch = frame_epoch_;
+     current_frame_ranges_.push_back({start, length, 0, &entry});

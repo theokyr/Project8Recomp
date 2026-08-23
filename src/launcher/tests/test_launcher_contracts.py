@@ -7,8 +7,8 @@ stdout an interface, and this file is the gate on it.
 Both regressions these tests exist for were real and shipped:
 
 * `thps_p8_identify` segfaulted on a disc image truncated after its header, so a
-  truncated dump crashed instead of being refused. Release gate 8 in
-  `docs/policies/dependency-licences.md` requires it to fail closed.
+  truncated dump crashed instead of being refused. The public contract requires
+  malformed input to fail closed.
 * The SDK logs to **stdout**, so `[error] [fs] ...` landed in the middle of the
   JSON. Every broken input produced unparseable output and the GUI only survived
   it by substring-matching rather than parsing.
@@ -23,6 +23,7 @@ the suite is hermetic and runs in well under a second.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import zipfile
 from pathlib import Path
@@ -30,9 +31,31 @@ from pathlib import Path
 import pytest
 
 
-WORKSPACE = Path(__file__).resolve().parents[3]
-IDENTIFY = WORKSPACE / "recomp" / "identify" / "out" / "thps_p8_identify"
-LAUNCH = WORKSPACE / "recomp" / "build" / "out" / "build" / "relwithdebinfo" / "thps_p8_launch"
+ROOT = Path(__file__).resolve().parents[3]
+if (ROOT / "recomp").is_dir():
+    IDENTIFY = ROOT / "recomp" / "identify" / "out" / "thps_p8_identify"
+    LAUNCH = ROOT / "recomp" / "build" / "out" / "build" / "relwithdebinfo" / "thps_p8_launch"
+else:
+    IDENTIFY = Path(os.environ.get("THPS_P8_IDENTIFY", ROOT / "build" / "identify" / "thps_p8_identify"))
+    LAUNCH = Path(os.environ.get("THPS_P8_LAUNCH", ROOT / "build" / "game" / "thps_p8_launch"))
+
+# Both binaries link the SDK runtime, and neither build tree has it beside them:
+# the libraries are only ever staged next to an executable by `make portable`.
+# The release build sets REXGLUE_SDK explicitly. Without it these tests fail at
+# exec with "librexruntimerd.so: cannot open shared object file" - which pytest
+# otherwise surfaces as a JSONDecodeError on empty stdout, a diagnostic that
+# points nowhere near the cause.
+def _sdk_env() -> dict:
+    sdk = os.environ.get("REXGLUE_SDK", "")
+    env = dict(os.environ)
+    if sdk:
+        env["LD_LIBRARY_PATH"] = os.pathsep.join(
+            x for x in (str(Path(sdk) / "lib"), env.get("LD_LIBRARY_PATH", "")) if x
+        )
+    return env
+
+
+SDK_ENV = _sdk_env()
 
 needs_identify = pytest.mark.skipif(
     not IDENTIFY.exists(), reason="thps_p8_identify not built (`make identify`)"
@@ -53,6 +76,7 @@ def _identify(path: Path | str) -> dict:
         capture_output=True,
         text=True,
         timeout=120,
+        env=SDK_ENV,
     )
     return json.loads(result.stdout)
 
@@ -113,7 +137,8 @@ def test_check_json_is_parseable_and_shaped() -> None:
     """The three home-screen states are derived from these fields, so their
     presence is the contract -- not their values, which depend on the machine."""
     result = subprocess.run(
-        [str(LAUNCH), "--check", "--json"], capture_output=True, text=True, timeout=60
+        [str(LAUNCH), "--check", "--json"], capture_output=True, text=True,
+        timeout=60, env=SDK_ENV
     )
     payload = json.loads(result.stdout)
 
@@ -137,7 +162,8 @@ def test_check_exit_code_agrees_with_clear() -> None:
     """`--check` used to exit 0 while reporting orphaned segments, so a script
     gating on it saw a clean machine while /dev/shm filled up."""
     result = subprocess.run(
-        [str(LAUNCH), "--check", "--json"], capture_output=True, text=True, timeout=60
+        [str(LAUNCH), "--check", "--json"], capture_output=True, text=True,
+        timeout=60, env=SDK_ENV
     )
     payload = json.loads(result.stdout)
     assert result.returncode == (0 if payload["clear"] else 1)
@@ -150,6 +176,7 @@ def test_json_outside_check_is_a_usage_error() -> None:
         capture_output=True,
         text=True,
         timeout=60,
+        env=SDK_ENV,
     )
     assert result.returncode == 2
     assert result.stdout == "", "a usage error must not emit a JSON body"

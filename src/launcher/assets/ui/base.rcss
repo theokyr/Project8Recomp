@@ -280,6 +280,34 @@ body.st-settings #detail { display: none; }
  * control can end up unreachable, which is worse than a scrollbar. */
 .screen { overflow-y: auto; }
 
+/* Section headings inside the settings panel. Small and quiet: they exist to
+ * group rows, not to compete with them for attention. */
+.setting-group {
+	margin-top: 14dp;
+	margin-bottom: 4dp;
+	font-size: 13dp;
+	color: rgba(150, 200, 255, 200);
+}
+
+/* A disc image found beside the launcher.
+ *
+ * Both this and #install_nearby default to hidden and are revealed together by
+ * LauncherApp when the scan actually verified something. Hidden-by-default is
+ * the safe direction: a stylesheet that fails to load leaves a launcher with
+ * one Browse button rather than one offering to install a disc it never found.
+ *
+ * Ordered before .panel-welcome's `display: flex` in the cascade would lose, so
+ * the reveal sets an inline style instead - see LauncherApp::ShowNearbyDisc. */
+#nearby         { display: none; }
+#install_nearby { display: none; }
+
+.nearby {
+	padding: 10dp 14dp;
+	margin-bottom: 12dp;
+	border-radius: 8dp;
+	background-color: rgba(52, 122, 78, 90);
+}
+
 /* The chosen file is only meaningful once something has been chosen. */
 .panel-path { display: none; }
 body.st-verifying .panel-path,

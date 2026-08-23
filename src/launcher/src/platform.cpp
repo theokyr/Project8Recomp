@@ -1,7 +1,7 @@
 // The one translation unit that is allowed to know what OS this is.
 //
-// Split the same way `recomp/build/src/launcher/` splits: a header with the
-// contract, one .inc per platform, and a .cpp that picks. The alternative -
+// Split as a header with the contract, one .inc per platform, and a .cpp that
+// picks. The alternative -
 // #ifdef inside each function - was tried in the launcher supervisor first and
 // is what that file's own comments warn against, because the shared half stops
 // being readable as either platform's code.

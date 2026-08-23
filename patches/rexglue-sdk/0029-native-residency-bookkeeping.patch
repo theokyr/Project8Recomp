@@ -1,0 +1,125 @@
+diff --git a/src/graphics/vulkan/native_residency.h b/src/graphics/vulkan/native_residency.h
+index 7bd6f63..2d17ad4 100644
+--- a/src/graphics/vulkan/native_residency.h
++++ b/src/graphics/vulkan/native_residency.h
+@@ -45,7 +45,18 @@ class NativeResidency {
+ // fingerprint cache below decides.
+ class NativeResidency {
+  public:
+-  NativeResidency() : resolve_pages_(kResolvePageWords, 0) {}
++  NativeResidency() : resolve_pages_(kResolvePageWords, 0) {
++    // The busy-map fixture has roughly 2,300 distinct vertex ranges per
++    // frame. Prepare enough room for a meaningfully larger scene and keep the
++    // node tables sparse: both are command-thread hot paths, and their default
++    // near-1.0 load factor showed up directly in the busy-window profile.
++    range_table_.max_load_factor(0.5f);
++    range_table_.reserve(kExpectedFrameRangeCount);
++    current_frame_range_keys_.max_load_factor(0.5f);
++    current_frame_range_keys_.reserve(kExpectedFrameRangeCount);
++    current_frame_ranges_.reserve(kExpectedFrameRangeCount);
++    prefetch_ranges_.reserve(kExpectedFrameRangeCount);
++  }
+ 
+   // Frame boundary, called from IssueSwap. The mode is latched once per frame
+   // so that no draw sees the cvars change underneath it and no frame is half
+@@ -157,6 +168,7 @@ class NativeResidency {
+   static constexpr uint32_t kResolvePageSizeLog2 = 12;
+   static constexpr uint32_t kResolvePageCount = SharedMemory::kBufferSize >> kResolvePageSizeLog2;
+   static constexpr size_t kResolvePageWords = kResolvePageCount / 64;
++  static constexpr size_t kExpectedFrameRangeCount = 4096;
+ 
+   // Fingerprint entries older than this many frames are dropped, so that a
+   // level transition's worth of dead geometry does not stay in the table for
+@@ -266,6 +278,11 @@ class NativeResidency {
+   struct VertexRange {
+     uint32_t start;
+     uint32_t length;
++    // Scratch used only while this range is in prefetch_ranges_. References
++    // into an unordered_map survive rehash; this lets the two-pass prefetch
++    // stamp the exact entry it inserted without hashing the key a second time.
++    uint64_t hash = 0;
++    Entry* entry = nullptr;
+   };
+   std::vector<VertexRange> current_frame_ranges_;
+   std::unordered_set<uint64_t> current_frame_range_keys_;
+diff --git a/src/graphics/vulkan/native_residency.cc b/src/graphics/vulkan/native_residency.cc
+index 3bca0d7..2af25ba 100644
+--- a/src/graphics/vulkan/native_residency.cc
++++ b/src/graphics/vulkan/native_residency.cc
+@@ -93,7 +93,10 @@ void NativeResidency::LatchFrameModeAtSwap(SharedMemory& shared_memory) {
+   }
+ 
+   if (prefetch_frame_) {
+-    prefetch_ranges_ = std::move(current_frame_ranges_);
++    // Keep both vector allocations alive across frames. Move-assignment made
++    // the old prefetch buffer release its storage and left current empty, so
++    // the 2,000+ range working set was allocated again every frame.
++    prefetch_ranges_.swap(current_frame_ranges_);
+     current_frame_ranges_.clear();
+   } else {
+     current_frame_ranges_.clear();
+@@ -107,21 +110,13 @@ void NativeResidency::PrefetchFrame(SharedMemory& shared_memory) {
+     return;
+   }
+ 
+-  struct UploadedRange {
+-    uint64_t key;
+-    uint32_t start;
+-    uint32_t length;
+-    uint64_t hash;
+-  };
+-  std::vector<UploadedRange> uploaded;
+-  uploaded.reserve(prefetch_ranges_.size());
+-
+   // Uploads still use the existing proven copy path. Their transfer barriers
+   // are individually conservative for this first experiment, but they all
+   // execute here while the outgoing pass is ending, rather than interleaved
+   // with the next frame's draws. This isolates pass scheduling before barrier
+   // coalescing changes any other variable.
+-  for (const VertexRange& range : prefetch_ranges_) {
++  for (VertexRange& range : prefetch_ranges_) {
++    range.entry = nullptr;
+     if (!range.length || range.start >= SharedMemory::kBufferSize ||
+         SharedMemory::kBufferSize - range.start < range.length ||
+         range.length > hash_max_bytes_frame_ ||
+@@ -129,8 +124,9 @@ void NativeResidency::PrefetchFrame(SharedMemory& shared_memory) {
+       continue;
+     }
+     const uint64_t key = RangeKey(range.start, range.length);
+-    auto existing = range_table_.find(key);
+-    if (existing != range_table_.end() && existing->second.blacklisted) {
++    auto entry_it =
++        range_table_.try_emplace(key, Entry{0, false, 0, 0, false, false}).first;
++    if (entry_it->second.blacklisted) {
+       continue;
+     }
+ 
+@@ -138,10 +134,11 @@ void NativeResidency::PrefetchFrame(SharedMemory& shared_memory) {
+     PERF_counter_add(kNativeBytesHashed, range.length);
+     const uint64_t hash = XXH3_64bits(source, range.length);
+     if (!shared_memory.UploadRangeUnwatched(range.start, range.length, source)) {
+-      range_table_.erase(key);
++      range_table_.erase(entry_it);
+       continue;
+     }
+-    uploaded.push_back({key, range.start, range.length, hash});
++    range.hash = hash;
++    range.entry = &entry_it->second;
+     PERF_counter_inc(kNativePrefetchRanges);
+   }
+ 
+@@ -149,9 +146,11 @@ void NativeResidency::PrefetchFrame(SharedMemory& shared_memory) {
+   // the same guest bytes in their overlap, and MaxWriteSeq now records the
+   // final batch state rather than making an earlier copy look clobbered by a
+   // later one from this same prefetch wave.
+-  for (const UploadedRange& range : uploaded) {
+-    Entry& entry =
+-        range_table_.try_emplace(range.key, Entry{0, false, 0, 0, false, false}).first->second;
++  for (const VertexRange& range : prefetch_ranges_) {
++    if (!range.entry) {
++      continue;
++    }
++    Entry& entry = *range.entry;
+     entry.hash = range.hash;
+     entry.hash_valid = true;
+     entry.last_epoch = frame_epoch_;

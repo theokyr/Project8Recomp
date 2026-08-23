@@ -1,82 +1,44 @@
-# Recompiler config
+# Recompiler configuration
 
-Committed, reviewable text. These files contain guest addresses, sizes and
-register indices only - metadata, not code - so they are clean-room safe.
+This directory contains the committed, reviewable input to ReXGlue codegen.
+It records guest addresses, sizes, names, and register-localisation choices;
+it contains no executable or generated game code.
 
-Contents: `thps_p8_manifest.toml`, the rexglue codegen manifest that REACHES
-IN-GAME - 178 forced function starts, each with a discovery method, plus the
-register-localization flags kept off per `../notes/disproved.md` D14. It is a
-REPLACE_ME template; `make codegen` renders `*.local.toml` (gitignored) with
-this machine's absolute paths and runs codegen from `../` so rexglue's
-CWD-relative template lands in `../generated/`.
+## Files
 
-## Dialect
+- `thps_p8_manifest.toml` is the distributable template for the supported 2006
+  retail disc build. It includes the code spans and forced function starts the
+  recompiler needs.
+- `*.local.toml` files are local renders with absolute paths. They are ignored
+  and must never be published.
+- `generated/` is codegen output. It is a mechanical translation of the game
+  executable and is ignored under the same rule as extracted disc content.
 
-`rexglue`, following ADR 0003
-(`docs/decisions/0003-thps8-recompilation-toolchain.md`). Recorded in
-`../recomp.yml` under `config.dialect`.
+The manifest deliberately contains `REPLACE_ME` path values. Copy or render it
+to a `.local.toml` file, replace those values with paths to your own extracted
+`default.xex` and output directory, then run ReXGlue codegen against the local
+copy. Do not put personal paths into the committed template.
 
-This is not cosmetic. The two surveyed dialects put their keys in mutually
-exclusive places - one under `[main]`, the other at the top level - so a file
-written in the wrong shape is not a file with a few wrong keys, it is a file
-the loader reads nothing from. `tools/recomp-lint` reports that as
-`DIALECT-UNKNOWN` rather than letting it exit 0.
-
-## Still to author
-
-- **Switch-table modeling.** The manifest currently forces several
-  mid-function jump-table targets as function starts. That boots, but it is
-  the prime suspect for why every register-localization flag group crashes
-  (D14); converting those entries to the codegen's switch-table support is
-  the named unblock path for the gameplay CPU-speedup work.
-
-The schema note stands: the SDK's config format changed incompatibly once
-(flat single-binary form to manifest+config split). Take the shape from the
-pinned build, and mind the `[entrypoint.functions]` nesting trap documented
-in the manifest header.
-
-## Values to carry across
-
-Measured, and settled enough to write down before the file exists.
+## Known image values
 
 | Property | Value |
 | --- | --- |
 | Image base | `0x82000000` |
 | Image size | `0x00A80000` |
 | Code base | `0x82090000` |
-| Code size | `0x0063D284` (combined span; **not** `0x0062CA64`) |
+| Code size | `0x0063D284` |
 | Entry point | `0x823AC158` |
 
-The eight ABI anchor addresses are in `../recomp.yml` under `abi_anchors`.
-The chosen toolchain detects them by signature rather than requiring them, but
-record them anyway: an anchor a detector gets wrong is otherwise undetectable,
-and `platforms/xbox360/signatures/README.md` documents the three-step trust
-test that catches it.
+The forced entries carry their discovery method in the manifest. Do not add an
+address copied from another project without re-deriving it against the
+supported executable. A wrong forced start can compile cleanly and fail much
+later at runtime.
 
-`setjmp` is `third-party-claim`, corroborated by a real unwind boundary at the
-claimed address. `longjmp` is an unverified claim. Neither should be written
-into a config as if measured; if the title turns out not to use them, omit both
-properties rather than guessing.
+## Rules
 
-## Rules for this directory
-
-- Every forced function entry must carry its discovery method and confidence
-  tier. An address list without provenance is not reviewable.
-- Never copy addresses in from a third-party config without re-deriving them.
-  Leads live in `../facts/upstream-p8-config-claims.md` and the full working
-  record is `../analysis/address-ledger.tsv`. An address is promoted into a
-  config only once it carries `evidence: observed` and a size.
-- A generated switch-table file that has been hand-edited must say so in a
-  header comment, so a regeneration does not silently discard the edits.
-- Lint before generating, not after:
-
-  ```sh
-  python3 tools/recomp-lint/src/lint_recomp_config.py \
-    games/tony-hawks-project-8/recomp/recomp.yml \
-    games/tony-hawks-project-8/recomp/config/<config>.toml \
-    --image games/tony-hawks-project-8/sources/install-media/derived/default.pe.bin
-  ```
-
-  Pass `--image`. Without it the linter range-checks against a declared span,
-  which is a claim about the image rather than a measurement of it, and it
-  says so.
+- Keep absolute paths and source material out of committed files.
+- Keep generated translation units out of git and release source archives.
+- Preserve the manifest schema and `[entrypoint.functions]` nesting used by the
+  pinned SDK; older flat configuration examples are incompatible.
+- Treat register-localisation flags as correctness-sensitive. Leave a group
+  off unless it has passed boot, gameplay, and save/load checks.
