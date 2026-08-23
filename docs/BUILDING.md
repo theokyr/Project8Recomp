@@ -37,8 +37,8 @@ repository substitutes for it.
 You will need:
 
 1. **The rexglue SDK**, built with the patches in `patches/rexglue-sdk/`.
-   Apply them in the order `patches/rexglue-sdk/README.md` gives — it is not
-   numeric order, and the README says why. Without them the game runs about
+   Apply them in the machine-readable order in `patches/rexglue-sdk/series` —
+   it is not numeric order, and the README says why. Without them the game runs about
    four times slower, and on macOS it does not run at all.
 2. **Your extracted game data**, which the launcher produces, or which you can
    extract yourself with `thps_p8_identify --identify_disc=... --extract_to=...`.
@@ -113,6 +113,7 @@ without `librexgpu-xenos*`, the game starts, opens a window and draws nothing.
 
 ```sh
 tools/check_no_game_content.sh
+python3 tools/check_linux_abi.py <staged Linux directory>
 tools/check_gpl_boundary.sh <every binary you are about to ship>
 tools/make_notice.py --sdk /path/to/rexglue-sdk > NOTICE
 ```

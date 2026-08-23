@@ -64,6 +64,7 @@ Everything is inside the folder you unpacked, and nothing is written outside it:
 
 ```
 thps-p8/
+├── Project8Recomp         player entry; setup first, then Play (--gui for launcher)
 ├── thps_p8_gui            the launcher
 ├── thps_p8                the game
 ├── thps_p8_launch         supervisor; cleans up after a crash
@@ -78,9 +79,15 @@ thps-p8/
 Move the folder wherever you like; copy it between your own machines and it
 keeps working. Delete the folder and nothing remains.
 
+`Project8Recomp` is additive. The four `thps_p8*` component names are unchanged
+from v0.1.0, so an existing Steam shortcut or script does not need to be
+rewritten. The player entry asks `thps_p8_gui` to Play by default; if setup is
+missing or incomplete, the launcher remains on its first-run screen. Pass
+`--gui` to open the launcher without requesting Play.
+
 ## Settings
 
-The launcher's **Display** screen covers resolution, which monitor to open on,
+The launcher's **Display** screen covers window size, which monitor to open on,
 windowed or fullscreen, and whether the frame rate is capped. Each is
 "Game default" until you change it, and each is written to
 `config/settings.toml` as you change it.
@@ -90,6 +97,14 @@ windowed or fullscreen, and whether the frame rate is capped. Each is
 A setting left at "Game default" is not written to the file and not passed to
 the game at all, so the game's own default applies. That is deliberate: it means
 the launcher never has to guess a value on your behalf.
+
+Choosing a size without explicitly choosing Fullscreen opens a window at that
+size. This detail matters: the runtime defaults to borderless fullscreen, which
+uses the desktop dimensions and necessarily discards any requested window
+dimensions. An explicit Fullscreen choice still wins. Named modes such as
+720p are passed through to the runtime; the Deck's 1280x800 mode also sets the
+host window and guest video-mode dimensions directly because it is not one of
+the original title's named 16:9 presets.
 
 Frame rate is worth one note: the cap is on by default and should stay on. With
 it off, in-level cutscenes run several times too fast. See

@@ -5,8 +5,8 @@ recompilation. It is not an emulator: the game's PowerPC code is translated to
 C++ ahead of time and compiled into a normal executable for your machine.
 
 > **You must own a copy of Tony Hawk's Project 8 for Xbox 360.** This repository
-> and every file in its releases contain no game assets, no disc image, and no
-> copyrighted game content of any kind. The launcher reads a disc image you
+> and its releases contain no disc image, original game executable, extracted
+> assets, or other files copied from the disc. The launcher reads a disc image you
 > supply from your own copy, checks it is a supported release, and sets up an
 > install on your machine. Nobody here has a copy to give you, and asking — in
 > an issue, a discussion, or anywhere else — will get the thread closed.
@@ -40,14 +40,15 @@ C++ ahead of time and compiled into a normal executable for your machine.
 | --- | --- |
 | Linux x86_64 | **Verified.** The main development and testing platform. |
 | macOS arm64 | **Verified** on Apple Silicon. Correct, but slow — see [known issues](docs/KNOWN_ISSUES.md). |
-| Windows x86_64 | **Experimental. Builds and runs, but never on real Windows.** |
+| Windows x86_64 | **Experimental. Complete build tested under Proton; not yet verified on real Windows.** |
 
-The Windows situation, plainly: everything is cross-compiled from Linux and
-tested under Wine, because nobody on this project owns a Windows machine. Under
-Wine the launcher works, a real disc is identified and extracted, and the game
-boots and renders. That is genuine progress and it is still not the same thing
-as running on Windows — Wine is a different implementation of the same
-interfaces, and the places it differs are where an untested port breaks.
+The Windows situation, plainly: everything is cross-compiled from Linux,
+because nobody on this project owns a Windows machine. The complete v0.2.0
+archive is smoke-tested under Proton before release: launcher, disc handoff,
+Vulkan game boot and sustained frame pacing. That is genuine evidence and it
+is still not the same thing as running on Windows — Proton is a different
+implementation of the same interfaces, and the places it differs are where an
+untested port breaks.
 
 If you try the Windows launcher, please tell us what happened. "It opened and
 the buttons worked" is as useful to us as a crash report, and there is
@@ -68,14 +69,23 @@ the buttons worked" is as useful to us as a crash report, and there is
 </p>
 
 1. Download the release for your platform and unpack it anywhere you can write.
-2. Run the launcher — `thps_p8_gui` (`thps_p8_gui.exe` on Windows).
+2. Run `Project8Recomp` (`Project8Recomp.exe` on Windows). On Steam Deck, add
+   this file as a Non-Steam Game and do not force Proton for the Linux build.
 3. It asks for your disc image. Point it at your `.iso`.
 4. It checks the image. This takes well under a second and copies nothing yet.
    A disc that is not the supported release is refused here, before 4.7 GB is
    written rather than after.
 5. On a match it copies the game data into the same folder — a few minutes, and
    you can stop it.
-6. The game starts. From then on the launcher is a Play button.
+6. The game starts. From then on `Project8Recomp` goes straight through the
+   launcher to Play. Run `Project8Recomp --gui` whenever you want settings,
+   setup status, or the normal launcher home screen.
+
+The v0.1.0 executable names remain in the folder and keep their old behavior,
+so existing shortcuts continue to work. The new entry is a small wrapper over
+`thps_p8_gui`; it never starts the game binary directly, which means launch
+settings, single-instance handling, the supervisor, and crash cleanup stay on
+the same path.
 
 Everything lives in that one folder: the game data, your saves, your settings.
 Move it, copy it between your own machines, delete it — nothing is written
@@ -186,8 +196,8 @@ because the recompiler reads `default.xex` as its input.
 ## Legal
 
 **Ownership.** You must own a copy of Tony Hawk's Project 8 for Xbox 360. This
-repository and every file in its releases contain no game assets, no disc image,
-and no copyrighted game content of any kind.
+repository and its releases contain no disc image, original game executable,
+extracted assets, or other files copied from the disc.
 
 **Non-affiliation.** Tony Hawk's Project 8 is a trademark of Activision
 Publishing, Inc. Tony Hawk is a trademark of Tony Hawk. Xbox 360 and related
@@ -202,11 +212,12 @@ configuration, the build scripts and the documentation — is under the BSD
 3-Clause License ([LICENSE](LICENSE)). Third-party components are used under
 their own licences, reproduced in full in [NOTICE](NOTICE).
 
-It does **not** cover anything derived from the game. The code the recompiler
-generates on your machine from your own `default.xex` is derived from
-Activision and Neversoft's copyrighted binary, and this licence grants you no
-rights to it. Run it locally against the copy you own; do not redistribute it,
-and do not redistribute your game files.
+It does **not** cover anything derived from the game. The translation units the
+recompiler generates from `default.xex` are not published as source and are not
+licensed by this project. Release archives contain the compiled recompilation,
+but no original executable or extracted disc asset; the BSD licence grants no
+rights in the underlying title. Do not redistribute your generated sources or
+game files.
 
 **Do not request or share game files.** Issues, discussions and pull requests
 asking where to obtain the game will be closed without an answer. Pull requests
