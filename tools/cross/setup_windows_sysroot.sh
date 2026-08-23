@@ -49,7 +49,7 @@ rm -rf "$SYSROOT"
 # here. Symlink the spellings that are actually used.
 echo "==> adding case-variant header symlinks"
 for name in ObjBase.h SDKDDKVer.h Windows.h WinSock2.h WS2tcpip.h DXProgrammableCapture.h; do
-  lower="$(printf '%s' "$name" | tr 'A-Z' 'a-z')"
+  lower="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
   for dir in "$SYSROOT/sdk/include/um" "$SYSROOT/sdk/include/shared" "$SYSROOT/sdk/include/ucrt"; do
     if [ -f "$dir/$lower" ] && [ ! -e "$dir/$name" ]; then
       ln -s "$lower" "$dir/$name"

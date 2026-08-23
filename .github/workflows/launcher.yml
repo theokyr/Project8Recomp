@@ -33,21 +33,29 @@ jobs:
           - { name: windows-x86_64, os: windows-2022 }
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Check publishable tree
+      - name: Check publishable tree and SDK patch inventory
         if: runner.os == 'Linux'
-        run: tools/check_no_game_content.sh
+        run: |
+          tools/check_no_game_content.sh
+          tools/check_patch_series.sh
 
       - name: Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build cmake libfreetype-dev xvfb \
+            ninja-build cmake libfreetype-dev shellcheck xvfb \
             libx11-dev libxext-dev libwayland-dev libxkbcommon-dev \
             libegl1-mesa-dev libgl1-mesa-dev
           ./tools/ci/build_sdl3.sh
+
+      - name: Check release tools
+        if: runner.os == 'Linux'
+        run: |
+          shellcheck tools/*.sh tools/ci/*.sh tools/cross/*.sh
+          python3 -m py_compile tools/*.py
 
       - name: Dependencies (macOS)
         if: runner.os == 'macOS'
@@ -187,7 +195,7 @@ jobs:
           # The first Windows artifact shipped .sln and .vcxproj files.
           ! ls "$out"/*.vcxproj "$out"/*.sln 2>/dev/null | grep -q .
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: thps_p8_launcher-${{ matrix.name }}
           path: dist/
