@@ -128,8 +128,12 @@ jobs:
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
           $install = & $vswhere -latest -products '*' -property installationPath
           if (-not $install) { throw 'Visual Studio installation not found' }
+          # VS also places aliases such as "v143" in this directory. They are
+          # not version strings and must not participate in numeric ordering.
           $versions = Get-ChildItem (Join-Path $install 'VC\Redist\MSVC') -Directory |
+            Where-Object { $_.Name -match '^\d+(\.\d+)+$' } |
             Sort-Object { [version]$_.Name } -Descending
+          if (-not $versions) { throw 'No numeric Visual C++ redist versions found' }
           $crt = $versions |
             ForEach-Object { Join-Path $_.FullName 'x64\Microsoft.VC143.CRT' } |
             Where-Object { Test-Path $_ } |
