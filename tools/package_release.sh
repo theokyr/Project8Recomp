@@ -240,7 +240,9 @@ say "stripping debug symbols"
 case "$PLATFORM" in
   macos*)
     for f in "$STAGE"/Project8Recomp "$STAGE"/thps_p8 "$STAGE"/thps_p8_* "$STAGE"/*.dylib; do
-      [ -f "$f" ] && strip -x "$f" 2>/dev/null || true
+      if [ -f "$f" ]; then
+        strip -x "$f" 2>/dev/null || true
+      fi
     done
     ;;
   windows*)
@@ -249,7 +251,9 @@ case "$PLATFORM" in
     ;;
   *)
     for f in "$STAGE"/Project8Recomp "$STAGE"/thps_p8 "$STAGE"/thps_p8_* "$STAGE"/*.so*; do
-      [ -f "$f" ] && objcopy --strip-debug "$f" 2>/dev/null || true
+      if [ -f "$f" ]; then
+        objcopy --strip-debug "$f" 2>/dev/null || true
+      fi
     done
     ;;
 esac
