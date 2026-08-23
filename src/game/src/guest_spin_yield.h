@@ -46,11 +46,10 @@
 
 #pragma once
 
-#include <sched.h>
-#include <time.h>
-
 #include <atomic>
+#include <chrono>
 #include <cstdint>
+#include <thread>
 
 #include <rex/cvar.h>
 #include <rex/logging.h>
@@ -104,12 +103,9 @@ inline void FrameCounterReadYielding(PPCContext& ctx, uint8_t* base) {
       // removing essentially all of the spin's CPU.
       const uint32_t micros = REXCVAR_GET(guest_spin_yield_us);
       if (micros == 0) {
-        sched_yield();
+        std::this_thread::yield();
       } else {
-        struct timespec ts;
-        ts.tv_sec = 0;
-        ts.tv_nsec = static_cast<long>(micros) * 1000L;
-        nanosleep(&ts, nullptr);
+        std::this_thread::sleep_for(std::chrono::microseconds(micros));
       }
     }
   } else {
