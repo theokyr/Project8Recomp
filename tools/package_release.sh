@@ -168,7 +168,7 @@ if [ -d "$LAUNCHER_DIR/assets" ]; then
   fi
 fi
 cp -r "$HERE/src/launcher/assets" "$STAGE/"
-cp "$HERE/LICENSE" "$HERE/NOTICE" "$STAGE/"
+cp "$HERE/LICENSE" "$HERE/NOTICE" "$HERE/CHANGELOG.md" "$STAGE/"
 
 cat > "$STAGE/README.txt" <<EOF
 Tony Hawk's Project 8 - native port (Project8Recomp)
@@ -230,6 +230,8 @@ case "$PLATFORM" in
     if command -v patchelf >/dev/null 2>&1; then
       for lib in "$STAGE"/*.so*; do
         [ -f "$lib" ] || continue
+        # Literal loader token, not a shell variable.
+        # shellcheck disable=SC2016
         patchelf --set-rpath '$ORIGIN' "$lib" 2>/dev/null || true
       done
     else
@@ -266,6 +268,8 @@ for f in "$STAGE"/*; do
       rp=$(objdump -p "$f" 2>/dev/null | awk '/RUNPATH|RPATH/ {print $2}')
       old_ifs=$IFS; IFS=':'
       for entry in ${rp:-}; do
+        # Literal loader tokens, not shell variables.
+        # shellcheck disable=SC2016
         case "$entry" in
           ""|'$ORIGIN'|'$ORIGIN'/*) ;;
           *) echo "!! $(basename "$f") has rpath entry '$entry' outside \$ORIGIN" >&2; leaked=1 ;;
@@ -320,6 +324,8 @@ say "archiving"
 echo "$ARCHIVE"
 
 say "done"
+# Human-oriented summary; release filenames are controlled above.
+# shellcheck disable=SC2012
 ls -la "$STAGE" | head -20
 echo
 echo "Next: tools/check_gpl_boundary.sh $STAGE"

@@ -11,6 +11,7 @@ SDL_VERSION="${SDL_VERSION:-3.2.16}"
 SDL_IMAGE_VERSION="${SDL_IMAGE_VERSION:-3.2.4}"
 WORK="${WORK:-$(mktemp -d)}"
 PREFIX="${SDL_PREFIX:-${GITHUB_WORKSPACE:-$PWD}/.sdl3-prefix}"
+JOBS="${JOBS:-4}"
 mkdir -p "$PREFIX"
 
 fetch() {
@@ -24,7 +25,7 @@ build() {
     -DCMAKE_INSTALL_PREFIX="$PREFIX" \
     -DCMAKE_PREFIX_PATH="$PREFIX" \
     -DBUILD_SHARED_LIBS=ON "$@"
-  cmake --build "$src/build" --config Release --parallel
+  cmake --build "$src/build" --config Release --parallel "$JOBS"
   cmake --install "$src/build" --config Release
 }
 

@@ -1,0 +1,172 @@
+# Produces the complete Linux and Windows ZIPs that are tested before a tag.
+#
+# The translated game cannot be generated on a hosted runner because its input
+# is the player's own disc. This workflow is manual-only and packages prepared
+# game/runtime builds on a dedicated release runner; pull-request code never
+# executes there. The launcher is still built from this exact commit on hosted
+# runners, then combined with those prepared components.
+
+name: Release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version written into the candidate archives
+        required: true
+        default: v0.2.0-rc1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: project8-release-candidate
+  cancel-in-progress: false
+
+jobs:
+  launcher:
+    name: launcher-${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-24.04 }
+          - { name: windows-x86_64, os: windows-2022 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build cmake libfreetype-dev xvfb \
+            libx11-dev libxext-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev libgl1-mesa-dev
+          ./tools/ci/build_sdl3.sh
+
+      - name: Dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: vcpkg install sdl3 sdl3-image freetype --triplet x64-windows
+
+      - name: Configure (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cmake -S src/launcher -B build/launcher -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DTHPS_P8_GUI_EMBED_SOURCE_ASSET_PATH=OFF
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S src/launcher -B build/launcher -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DTHPS_P8_GUI_ISOLATED_SDL=OFF `
+            -DTHPS_P8_GUI_EMBED_SOURCE_ASSET_PATH=OFF
+
+      - name: Build and test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cmake --build build/launcher --parallel 4
+          ctest --test-dir build/launcher --output-on-failure
+          THPS_P8_GUI_STRICT=1 THPS_P8_GUI_EXIT_AFTER_LOAD=1 \
+            xvfb-run -a ./build/launcher/thps_p8_gui
+
+      - name: Build and test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake --build build/launcher --config Release --parallel 4
+          ctest --test-dir build/launcher -C Release --output-on-failure
+
+      - name: Stage launcher
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p candidate-launcher
+          for exe in Project8Recomp thps_p8_gui; do
+            cp "build/launcher/$exe" candidate-launcher/ 2>/dev/null || \
+            cp "build/launcher/Release/$exe.exe" candidate-launcher/ 2>/dev/null
+          done
+          cp -r src/launcher/assets candidate-launcher/
+          cp build/launcher/Release/*.dll candidate-launcher/ 2>/dev/null || true
+          if [ -d .sdl3-prefix ]; then
+            cp .sdl3-prefix/bin/*.dll candidate-launcher/ 2>/dev/null || true
+            cp .sdl3-prefix/lib/*.so* candidate-launcher/ 2>/dev/null || true
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candidate-launcher-${{ matrix.name }}
+          path: candidate-launcher/
+          if-no-files-found: error
+
+  package:
+    needs: launcher
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux, x64, project8-release]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-launcher-linux-x86_64
+          path: build/launcher-linux
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-launcher-windows-x86_64
+          path: build/launcher-windows
+
+      - name: Verify prepared components are configured
+        shell: bash
+        run: |
+          set -eu
+          for name in \
+            P8_LINUX_GAME_DIR P8_LINUX_IDENTIFY_DIR P8_LINUX_SDK_DIR \
+            P8_WINDOWS_GAME_DIR P8_WINDOWS_IDENTIFY_DIR P8_WINDOWS_SDK_DIR; do
+            test -n "${!name:-}" || { echo "release runner is missing $name" >&2; exit 1; }
+          done
+
+      - name: Package complete candidates
+        shell: bash
+        run: |
+          set -eu
+          tools/check_no_game_content.sh
+          tools/package_release.sh \
+            --platform linux-x86_64 --version '${{ inputs.version }}' \
+            --game "$P8_LINUX_GAME_DIR" \
+            --launcher build/launcher-linux \
+            --identify "$P8_LINUX_IDENTIFY_DIR" \
+            --sdk "$P8_LINUX_SDK_DIR"
+          tools/package_release.sh \
+            --platform windows-x86_64 --version '${{ inputs.version }}' \
+            --game "$P8_WINDOWS_GAME_DIR" \
+            --launcher build/launcher-windows \
+            --identify "$P8_WINDOWS_IDENTIFY_DIR" \
+            --sdk "$P8_WINDOWS_SDK_DIR"
+
+      - name: Gate complete candidates
+        shell: bash
+        run: |
+          set -eu
+          linux="dist/Project8Recomp-${{ inputs.version }}-linux-x86_64"
+          windows="dist/Project8Recomp-${{ inputs.version }}-windows-x86_64"
+          python3 tools/check_linux_abi.py "$linux"
+          tools/check_gpl_boundary.sh "$linux" "$windows"
+          test -x "$linux/Project8Recomp"
+          test -f "$windows/Project8Recomp.exe"
+          unzip -t "${linux}.zip"
+          unzip -t "${windows}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Project8Recomp-${{ inputs.version }}-complete
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 14

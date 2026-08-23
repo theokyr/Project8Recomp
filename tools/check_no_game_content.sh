@@ -23,6 +23,8 @@ fi
 check_glob() {
   local pattern="$1" why="$2"
   local -a hits=()
+  # The right-hand side is intentionally a caller-supplied shell glob.
+  # shellcheck disable=SC2053
   for f in "${publishable[@]}"; do [[ "$f" == $pattern ]] && hits+=("$f"); done
   if [ "${#hits[@]}" -gt 0 ]; then
     report "$why" "${hits[@]}"
