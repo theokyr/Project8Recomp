@@ -4,7 +4,7 @@
 # This is the release artifact: unpack, run the launcher, point it at your own
 # disc image, play. It carries the runtime and nothing from the disc.
 #
-#   tools/package_release.sh --platform linux-x86_64 --version v0.1.0 \
+#   tools/package_release.sh --platform linux-x86_64 --version v0.2.0 \
 #     --game <dir with thps_p8> --launcher <dir with thps_p8_gui> \
 #     --identify <dir with thps_p8_identify> --sdk <sdk prefix>
 #
@@ -34,14 +34,26 @@ for required in PLATFORM VERSION GAME_DIR LAUNCHER_DIR IDENTIFY_DIR SDK_DIR; do
 done
 
 case "$PLATFORM" in
-  windows*) EXE=".exe"; LIBGLOB="*.dll" ;;
-  macos*)   EXE="";     LIBGLOB="*.dylib" ;;
-  *)        EXE="";     LIBGLOB="*.so*" ;;
+  windows-x86_64) EXE=".exe"; LIBGLOB="*.dll" ;;
+  macos-arm64)    EXE="";     LIBGLOB="*.dylib" ;;
+  linux-x86_64)   EXE="";     LIBGLOB="*.so*" ;;
+  *) echo "unsupported --platform: $PLATFORM" >&2; exit 2 ;;
 esac
+
+if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+  echo "invalid --version: $VERSION" >&2
+  exit 2
+fi
+
+mkdir -p "$OUT_DIR"
+OUT_DIR="$(cd "$OUT_DIR" && pwd -P)"
 
 NAME="Project8Recomp-${VERSION}-${PLATFORM}"
 STAGE="$OUT_DIR/$NAME"
-rm -rf "$STAGE"; mkdir -p "$STAGE"
+ARCHIVE="$OUT_DIR/$NAME.zip"
+rm -rf -- "$STAGE"
+rm -f -- "$ARCHIVE"
+mkdir -p "$STAGE"
 
 say() { printf '==> %s\n' "$*"; }
 
@@ -55,6 +67,7 @@ say "binaries"
 copy_one "$GAME_DIR/thps_p8$EXE"              "the game"
 copy_one "$GAME_DIR/thps_p8_launch$EXE"       "the supervisor"
 copy_one "$LAUNCHER_DIR/thps_p8_gui$EXE"      "the launcher"
+copy_one "$LAUNCHER_DIR/Project8Recomp$EXE"   "the player entry point"
 copy_one "$IDENTIFY_DIR/thps_p8_identify$EXE" "the disc worker"
 
 say "runtime libraries"
@@ -64,8 +77,15 @@ say "runtime libraries"
 needed_libs() {
   local bin="$1"
   case "$PLATFORM" in
-    windows*) x86_64-w64-mingw32-objdump -p "$bin" 2>/dev/null \
-                | awk '/DLL Name:/ {print $3}' ;;
+    windows*)
+      if command -v llvm-objdump >/dev/null 2>&1; then
+        llvm-objdump -p "$bin" 2>/dev/null | awk '/DLL Name:/ {print $3}'
+      elif command -v x86_64-w64-mingw32-objdump >/dev/null 2>&1; then
+        x86_64-w64-mingw32-objdump -p "$bin" 2>/dev/null | awk '/DLL Name:/ {print $3}'
+      else
+        objdump -p "$bin" 2>/dev/null | awk '/DLL Name:/ {print $3}'
+      fi
+      ;;
     macos*)   otool -L "$bin" 2>/dev/null | tail -n +2 | awk '{print $1}' \
                 | xargs -n1 basename 2>/dev/null ;;
     *)        objdump -p "$bin" 2>/dev/null | awk '/NEEDED/ {print $2}' ;;
@@ -150,14 +170,21 @@ fi
 cp -r "$HERE/src/launcher/assets" "$STAGE/"
 cp "$HERE/LICENSE" "$HERE/NOTICE" "$STAGE/"
 
-cat > "$STAGE/README.txt" <<'EOF'
+cat > "$STAGE/README.txt" <<EOF
 Tony Hawk's Project 8 - native port (Project8Recomp)
 
 You need your own copy of the game. This folder contains no game content.
 
-  1. Run the launcher:  thps_p8_gui
+  1. Run:  Project8Recomp${EXE}
   2. Point it at a disc image of your own copy.
   3. It checks the disc, copies the game here, and starts it.
+
+After setup, Project8Recomp${EXE} starts the game through the launcher. Run it
+with --gui to open the full launcher instead. On Steam Deck, add this one file
+as a Non-Steam Game, use the native Linux ZIP, and do not force Proton.
+
+The existing thps_p8* executable names are retained for compatibility with
+v0.1.0 installs and shortcuts.
 
 Everything stays in this folder - game data, saves, settings. Move it, copy it
 between your own machines, or delete it; nothing is written anywhere else.
@@ -176,7 +203,7 @@ say "stripping debug symbols"
 # worth 75 MB on every download. Rebuild locally when one is actually needed.
 case "$PLATFORM" in
   macos*)
-    for f in "$STAGE"/thps_p8 "$STAGE"/thps_p8_* "$STAGE"/*.dylib; do
+    for f in "$STAGE"/Project8Recomp "$STAGE"/thps_p8 "$STAGE"/thps_p8_* "$STAGE"/*.dylib; do
       [ -f "$f" ] && strip -x "$f" 2>/dev/null || true
     done
     ;;
@@ -185,7 +212,7 @@ case "$PLATFORM" in
     # executables have nothing to strip.
     ;;
   *)
-    for f in "$STAGE"/thps_p8 "$STAGE"/thps_p8_* "$STAGE"/*.so*; do
+    for f in "$STAGE"/Project8Recomp "$STAGE"/thps_p8 "$STAGE"/thps_p8_* "$STAGE"/*.so*; do
       [ -f "$f" ] && objcopy --strip-debug "$f" 2>/dev/null || true
     done
     ;;
@@ -267,12 +294,30 @@ while IFS= read -r f; do
 done < <(find "$STAGE" -type f)
 [ "$bad" -eq 0 ] || { echo "REFUSING: game content in the archive" >&2; exit 1; }
 
+say "writing provenance and checksums"
+cat > "$STAGE/BUILDINFO.txt" <<EOF
+Project8Recomp release: $VERSION
+Platform: $PLATFORM
+Source commit: $(git -C "$HERE" rev-parse HEAD 2>/dev/null || echo unknown)
+EOF
+
+hash_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+while IFS= read -r relative; do
+  relative="${relative#./}"
+  printf '%s  %s\n' "$(hash_file "$STAGE/$relative")" "$relative"
+done < <(cd "$STAGE" && find . -type f ! -name SHA256SUMS -print | LC_ALL=C sort) \
+  > "$STAGE/SHA256SUMS"
+
 say "archiving"
-( cd "$OUT_DIR"
-  case "$PLATFORM" in
-    windows*) zip -qr "$NAME.zip" "$NAME"; echo "$OUT_DIR/$NAME.zip" ;;
-    *)        tar -czf "$NAME.tar.gz" "$NAME"; echo "$OUT_DIR/$NAME.tar.gz" ;;
-  esac )
+( cd "$OUT_DIR" && zip -qr "$NAME.zip" "$NAME" )
+echo "$ARCHIVE"
 
 say "done"
 ls -la "$STAGE" | head -20

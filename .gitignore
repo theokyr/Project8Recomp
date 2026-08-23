@@ -1,7 +1,7 @@
 # Build output
-build/
-out/
-.sdl3-prefix/
+/build/
+/out/
+/.sdl3-prefix/
 *.o
 *.a
 *.so
@@ -11,7 +11,7 @@ out/
 
 # Recompiler output. This is a translation of the user's own game executable
 # and is regenerated locally; it must never be committed.
-generated/
+/generated/
 *thps_p8_recomp.*.cpp
 *_init.cpp
 
@@ -25,12 +25,12 @@ generated/
 *.bik.xen
 *.xma
 *.fsb
-DATA/
-game/
+/DATA/
+/game/
 
 # A local install
-saves/
-logs/
+/saves/
+/logs/
 config/install.toml
 config/settings.toml
 config/*.local.toml
@@ -40,4 +40,4 @@ __pycache__/
 compile_commands.json
 
 # Release staging output
-dist/
+/dist/

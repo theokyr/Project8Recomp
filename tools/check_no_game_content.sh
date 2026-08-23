@@ -3,7 +3,7 @@
 #
 # Checks the file listing, not the ignore rules. There is no allowlist.
 
-set -uo pipefail
+set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$HERE"
@@ -15,19 +15,21 @@ report() {
   fail=1
 }
 
-mapfile -t tracked < <(git ls-files 2>/dev/null)
-if [ "${#tracked[@]}" -eq 0 ]; then
-  mapfile -t tracked < <(find . -type f -not -path './.git/*' -not -path './build/*' | sed 's|^\./||')
+mapfile -d '' -t publishable < <(git ls-files --cached --others --exclude-standard -z 2>/dev/null)
+if [ "${#publishable[@]}" -eq 0 ]; then
+  mapfile -d '' -t publishable < <(find . -type f -not -path './.git/*' -print0)
 fi
 
 check_glob() {
   local pattern="$1" why="$2"
   local -a hits=()
-  for f in "${tracked[@]}"; do [[ "$f" == $pattern ]] && hits+=("$f"); done
-  [ "${#hits[@]}" -gt 0 ] && report "$why" "${hits[@]}"
+  for f in "${publishable[@]}"; do [[ "$f" == $pattern ]] && hits+=("$f"); done
+  if [ "${#hits[@]}" -gt 0 ]; then
+    report "$why" "${hits[@]}"
+  fi
 }
 
-echo "== checking ${#tracked[@]} tracked files =="
+echo "== checking ${#publishable[@]} publishable files (tracked and non-ignored) =="
 
 check_glob '*.xex'      'a game executable is in the tree'
 check_glob '*.xzp'      'a disc asset container is in the tree'
@@ -47,12 +49,14 @@ check_glob '*/generated/*'         'recompiler output is in the tree'
 
 # Backstop: every legitimate file here is source, config or a font.
 big=()
-for f in "${tracked[@]}"; do
+for f in "${publishable[@]}"; do
   [ -f "$f" ] || continue
   size=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
   [ "$size" -gt $((8 * 1024 * 1024)) ] && big+=("$f ($((size / 1024 / 1024)) MB)")
 done
-[ "${#big[@]}" -gt 0 ] && report 'a file larger than 8 MB is in the tree' "${big[@]}"
+if [ "${#big[@]}" -gt 0 ]; then
+  report 'a file larger than 8 MB is in the tree' "${big[@]}"
+fi
 
 if [ "$fail" -ne 0 ]; then
   echo
