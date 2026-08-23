@@ -2,7 +2,7 @@
 # Stage a complete, playable portable install and archive it.
 #
 # This is the release artifact: unpack, run the launcher, point it at your own
-# disc image, play. It carries the runtime and nothing from the disc.
+# disc image, play. It carries the runtime and no files copied from the disc.
 #
 #   tools/package_release.sh --platform linux-x86_64 --version v0.2.0 \
 #     --game <dir with thps_p8> --launcher <dir with thps_p8_gui> \
@@ -209,7 +209,8 @@ cp "$HERE/LICENSE" "$HERE/NOTICE" "$HERE/CHANGELOG.md" "$STAGE/"
 cat > "$STAGE/README.txt" <<EOF
 Tony Hawk's Project 8 - native port (Project8Recomp)
 
-You need your own copy of the game. This folder contains no game content.
+You need your own copy of the game. This folder contains no files copied from
+the disc.
 
   1. Run:  Project8Recomp${EXE}
   2. Point it at a disc image of your own copy.

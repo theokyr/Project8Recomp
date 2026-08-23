@@ -24,7 +24,7 @@ body:
     id: version
     attributes:
       label: Version
-      placeholder: "e.g. v0.1.0, or a commit hash if you built it yourself"
+      placeholder: "e.g. v0.2.0, or a commit hash if you built it yourself"
     validations:
       required: true
 

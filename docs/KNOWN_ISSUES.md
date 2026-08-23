@@ -19,10 +19,11 @@ Every session where F5 appeared to help was also a capped session.
 
 ## macOS performance
 
-Native Apple Silicon works and reaches gameplay, but is not fast. The ~100 fps
-figure comes from a desktop Linux machine with a discrete GPU and does not
-transfer: on an M1, Free Skate reaches gameplay at roughly 6 fps. It is
-functionally correct and not performance-playable.
+The v0.1.0 Apple Silicon package works and reaches gameplay, but is not fast.
+The ~100 FPS figure comes from a desktop Linux machine with a discrete GPU and
+does not transfer: on an M1, Free Skate reaches gameplay at roughly 6 FPS. It
+is functionally correct and not performance-playable. There is no v0.2.0 macOS
+package yet; v0.1.0 remains available from the previous release.
 
 ## Windows is mitigated and Proton-tested, not hardware-verified
 
@@ -64,7 +65,7 @@ Wine reparents the process outside the test supervisor.
 
 This is a concrete mitigation for the reported mechanism, with a measurable
 Proton overhead. Only a report from real Windows can tell us whether it fixes
-the original machine's behavior and close the hardware-verification gap.
+the original machine's behaviour and close the hardware-verification gap.
 
 If you run it, we want the report either way. "It opened and the buttons worked"
 is as useful as a crash.

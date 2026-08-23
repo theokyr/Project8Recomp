@@ -39,7 +39,7 @@ C++ ahead of time and compiled into a normal executable for your machine.
 | Platform | Status |
 | --- | --- |
 | Linux x86_64 | **Verified.** The main development and testing platform. |
-| macOS arm64 | **Verified** on Apple Silicon. Correct, but slow — see [known issues](docs/KNOWN_ISSUES.md). |
+| macOS arm64 | **v0.1.0 verified** on Apple Silicon. Correct, but slow; no v0.2.0 package yet — see [known issues](docs/KNOWN_ISSUES.md). |
 | Windows x86_64 | **Experimental. Complete v0.2.0 build tested under Proton; not yet verified on real Windows.** |
 
 The Windows situation, plainly: everything is cross-compiled from Linux,
@@ -83,7 +83,7 @@ the buttons worked" is as useful to us as a crash report, and there is
    launcher to Play. Run `Project8Recomp --gui` whenever you want settings,
    setup status, or the normal launcher home screen.
 
-The v0.1.0 executable names remain in the folder and keep their old behavior,
+The v0.1.0 executable names remain in the folder and keep their old behaviour,
 so existing shortcuts continue to work. The new entry is a small wrapper over
 `thps_p8_gui`; it never starts the game binary directly, which means launch
 settings, single-instance handling, the supervisor, and crash cleanup stay on

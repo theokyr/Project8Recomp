@@ -4,7 +4,8 @@
 
 v0.2.0 promotes the runtime configuration measured on Steam Deck, fixes the
 resolution control that v0.1.0 exposed but did not actually apply, and replaces
-launcher-only CI archives with complete, locally assembled pre-tag candidates.
+launcher-only CI archives with a process that assembles and tests complete
+release archives before tagging.
 
 ### One player entry, without breaking old installs
 
@@ -76,11 +77,12 @@ can still be disabled through the launcher's Performance setting.
 On the deterministic late-game Funpark fixture, the accepted Steam Deck LCD
 build's three-run uncapped promotion median measured approximately 2,667 draws
 per frame, **25.307 ms mean**, **25.000 ms p50**, **27.015 ms p95**, **39.51
-effective fps**, and **257.1% process CPU** (about 2.57 logical cores). With the
-player-default frame cap, the final archive held a stable 30 fps presentation
-mode in the same severe view at **33.34 ms p50 / 33.52 ms p95**. This is the
-current heavy-scene frontier, not a locked-60 claim. Smaller improvements were
-retained when they passed correctness and showed no regression.
+effective FPS**, and **257.1% process CPU** (about 2.57 logical cores). With the
+player-default frame cap, the release-candidate archive held a stable 30 FPS
+presentation mode in the same severe view at **33.34 ms p50 / 33.52 ms p95**.
+This is the current heavy-scene frontier, not a locked-60 claim. Smaller
+improvements were retained when they passed correctness and showed no
+regression.
 
 ### Reproducible release gates
 
