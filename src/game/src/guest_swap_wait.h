@@ -73,6 +73,10 @@ inline void RecordWait(uint64_t elapsed_us, bool reached) {
 
 } // namespace thps::swap_wait
 
+// Generated guest functions expose weak ELF aliases for title hooks. Mach-O
+// has no equivalent C/C++ alias attribute, so Apple retains the generated
+// functions while these cvars remain available to the shared launcher preset.
+#if !defined(__APPLE__)
 REX_HOOK_RAW(sub_82397688) {
   REX_FUNC_PROLOGUE();
 
@@ -129,3 +133,4 @@ REX_HOOK_RAW(sub_823975B8) {
   }
 
 }
+#endif

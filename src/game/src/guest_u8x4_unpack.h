@@ -65,6 +65,10 @@ inline void MaybeLog(uint64_t calls) {
 
 } // namespace thps::u8x4_unpack
 
+// Generated guest functions expose their original bodies through weak ELF
+// aliases. Mach-O has no equivalent C/C++ alias attribute, so retain the
+// generated function on Apple while keeping the cvars parseable.
+#if !defined(__APPLE__)
 REX_HOOK_RAW(sub_82354398) {
   REX_FUNC_PROLOGUE();
 
@@ -128,3 +132,4 @@ REX_HOOK_RAW(sub_82354398) {
     thps::u8x4_unpack::MaybeLog(calls);
   }
 }
+#endif
