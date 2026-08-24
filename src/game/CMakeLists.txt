@@ -10,6 +10,38 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(../config/generated/rexglue.cmake)
 
+# A cross-built SDK contains target runtime libraries, but its rexglue command
+# is a target-platform executable that cannot run during a host-side build.
+# Point the imported command target at a native tool without changing which SDK
+# libraries the game links. Passing the path is preferred; PATH discovery keeps
+# ordinary developer cross builds convenient.
+set(THPS_P8_REXGLUE_HOST_EXECUTABLE "" CACHE FILEPATH
+    "Native rexglue executable used for codegen while cross-compiling")
+if(CMAKE_CROSSCOMPILING)
+    if(NOT THPS_P8_REXGLUE_HOST_EXECUTABLE)
+        find_program(_thps_p8_rexglue_host
+            NAMES rexglue NO_CMAKE_FIND_ROOT_PATH)
+        if(_thps_p8_rexglue_host)
+            set(THPS_P8_REXGLUE_HOST_EXECUTABLE
+                "${_thps_p8_rexglue_host}" CACHE FILEPATH
+                "Native rexglue executable used for codegen while cross-compiling"
+                FORCE)
+        endif()
+    endif()
+    if(NOT THPS_P8_REXGLUE_HOST_EXECUTABLE OR
+       NOT EXISTS "${THPS_P8_REXGLUE_HOST_EXECUTABLE}")
+        message(FATAL_ERROR
+            "Cross-compiling requires -DTHPS_P8_REXGLUE_HOST_EXECUTABLE="
+            "/path/to/native/rexglue")
+    endif()
+    set_target_properties(rex::rexglue PROPERTIES
+        IMPORTED_LOCATION "${THPS_P8_REXGLUE_HOST_EXECUTABLE}"
+        IMPORTED_LOCATION_DEBUG "${THPS_P8_REXGLUE_HOST_EXECUTABLE}"
+        IMPORTED_LOCATION_RELEASE "${THPS_P8_REXGLUE_HOST_EXECUTABLE}"
+        IMPORTED_LOCATION_RELWITHDEBINFO "${THPS_P8_REXGLUE_HOST_EXECUTABLE}"
+        IMPORTED_LOCATION_MINSIZEREL "${THPS_P8_REXGLUE_HOST_EXECUTABLE}")
+endif()
+
 # Sources
 set(THPSP8_SOURCES
     src/main.cpp
@@ -109,6 +141,14 @@ function(thps_p8_anonymise_paths target)
 endfunction()
 
 thps_p8_anonymise_paths(thps_p8)
+
+# rexglue_setup_target creates a separate generated-code target. Its precompiled
+# header expands assertion and logging __FILE__ strings before the final game
+# target sees them, so the mapping must cover that target too. Otherwise one
+# absolute path survives stripping inside thps_p8_pch.h.
+if(TARGET thps_p8_recomp)
+    thps_p8_anonymise_paths(thps_p8_recomp)
+endif()
 
 # `..` so the shared dump table is reached as "common/supported_dumps.h" - the
 # same spelling thps_p8_identify uses, because it is the same file. Two gates,

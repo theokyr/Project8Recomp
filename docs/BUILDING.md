@@ -79,12 +79,13 @@ interface, so mingw-w64 cannot link against it under any combination of flags.
 # case-sensitive filesystem trips over.
 tools/cross/setup_windows_sysroot.sh
 
-# The SDK is built from source here rather than taken prebuilt, so the runtime
-# patches in patches/ are actually in the result - including the save fixes.
+# Build and install the patched SDK twice: once natively for the codegen tool,
+# and once with the Windows toolchain for the target libraries. A Windows
+# rexglue.exe cannot run during a Linux-hosted build.
 cmake -S src/game -B build/game-win -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE=tools/cross/windows-msvc.cmake \
-  -DREXSDK_DIR=/path/to/patched/rexglue-sdk \
-  -DREXGLUE_USE_D3D12=OFF -DREXGLUE_USE_VULKAN=ON \
+  -DCMAKE_PREFIX_PATH=/path/to/windows/sdk/prefix \
+  -DTHPS_P8_REXGLUE_HOST_EXECUTABLE=/path/to/native/sdk/prefix/bin/rexglue \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo
 cmake --build build/game-win
 ```
