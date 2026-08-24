@@ -2,10 +2,13 @@
 
 ## v0.2.1: accepted Steam Deck frontier refresh
 
-This patch release moves the public build from the p0p22 runtime configuration
-shipped in v0.2.0 to the accepted p0p39 Steam Deck frontier. Packaging,
-supported disc identity, executable names, save locations, and launcher flow
-are unchanged.
+This patch release ships the latest measured Steam Deck performance work. On
+the deterministic 2,600–2,799-draw Funpark fixture, the accepted build averaged
+**25.332 ms** per frame and **39.48 effective FPS**, a 1.16% frame-time
+improvement in its same-binary promotion gate. It also restores a complete
+Apple Silicon archive and improves the launcher's player-facing guidance. The
+supported disc identity, existing executable names, save locations, and
+launcher flow are unchanged.
 
 ### Adjacent texture descriptor-set reuse
 
