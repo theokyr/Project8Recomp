@@ -35,6 +35,8 @@ the SDK tree until the entire series is present.
 - `0028`: developer-console launch commands used by repeatable smoke fixtures.
 - `0037`: removes build-machine source and binary directory prefixes from
   diagnostic strings that remain in stripped release binaries.
+- `0038`: uses clang-cl's `/W4` warning level instead of its pathological
+  `-Wall`/`/Wall` interpretation during Windows cross-builds.
 
 Every new patch must be listed exactly once in `series`.
 `tools/check_patch_series.sh` and CI check both directions: an unlisted patch

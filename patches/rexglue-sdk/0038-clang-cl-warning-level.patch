@@ -1,0 +1,22 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -230,11 +230,14 @@ if(REXGLUE_BUILD_TESTS)
+ add_subdirectory(thirdparty)
+ 
+ # Enable warnings after thirdparty
+-add_compile_options(
+-    -Wall
+-    -Wextra
+-)
++# In clang-cl, GNU-style `-Wall` means the extremely noisy MSVC `/Wall`, not
++# the Clang-driver warning group. `/W4` is the intended clang-cl equivalent of
++# `-Wall -Wextra`.
++if(MSVC)
++    add_compile_options(/W4)
++else()
++    add_compile_options(-Wall -Wextra)
++endif()
+ 
+ include_directories(${REXGLUE_ROOT}/include)
+ 

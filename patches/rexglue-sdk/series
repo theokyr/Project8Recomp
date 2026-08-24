@@ -34,3 +34,4 @@ mmio_handler.patch
 0035-draw-census-sequences.patch
 0036-adjacent-texture-descriptor-set-reuse.patch
 0037-reproducible-source-paths.patch
+0038-clang-cl-warning-level.patch
