@@ -168,6 +168,32 @@ if [ "$PLATFORM" = "windows-x86_64" ]; then
   done
 fi
 
+if [ "$PLATFORM" = "macos-arm64" ]; then
+  # Vulkan is not a macOS system API. v0.1.0 happened to work on the build Mac
+  # because Homebrew supplied both the loader and MoltenVK; its archive did not
+  # carry either one. Stage them explicitly so a player needs no package
+  # manager, then let the supervisor select this adjacent manifest for the game
+  # child even when it was opened from Finder.
+  command -v brew >/dev/null 2>&1 || {
+    echo "Homebrew is required to locate the macOS Vulkan release libraries" >&2
+    exit 1
+  }
+  vulkan_loader="$(brew --prefix vulkan-loader)/lib/libvulkan.1.dylib"
+  moltenvk="$(brew --prefix molten-vk)/lib/libMoltenVK.dylib"
+  copy_one "$vulkan_loader" "the macOS Vulkan loader"
+  copy_one "$moltenvk" "MoltenVK"
+  cat > "$STAGE/MoltenVK_icd.json" <<'EOF'
+{
+  "file_format_version": "1.0.0",
+  "ICD": {
+    "library_path": "libMoltenVK.dylib",
+    "api_version": "1.4.0",
+    "is_portability_driver": true
+  }
+}
+EOF
+fi
+
 # macOS links its dependencies by absolute path, so a Homebrew-built launcher
 # names /opt/homebrew/... and runs only on a machine with the same Homebrew
 # packages installed. Copy the graph in and rewrite the paths.
@@ -175,6 +201,7 @@ if [ "${PLATFORM#macos}" != "$PLATFORM" ]; then
   say "bundling macOS dependencies"
   bash "$HERE/tools/ci/bundle_macos.sh" "$STAGE" \
     "$STAGE/thps_p8_gui" "$STAGE/thps_p8" "$STAGE/thps_p8_identify" "$STAGE/thps_p8_launch" \
+    "$STAGE/libvulkan.1.dylib" "$STAGE/libMoltenVK.dylib" \
     > /dev/null
   # An absolute Homebrew or local build path left in any binary means the
   # archive works here and nowhere else - the exact failure this step exists to
@@ -243,6 +270,15 @@ case "$PLATFORM" in
     for f in "$STAGE"/Project8Recomp "$STAGE"/thps_p8 "$STAGE"/thps_p8_* "$STAGE"/*.dylib; do
       if [ -f "$f" ]; then
         strip -x "$f" 2>/dev/null || true
+      fi
+    done
+    # install_name_tool and strip both invalidate Mach-O's linker signature.
+    # An unsigned local binary may run, but an invalid signature is killed by
+    # the kernel before main. Re-sign every mutated executable and dylib ad hoc;
+    # this provides integrity without pretending the release is notarized.
+    for f in "$STAGE"/Project8Recomp "$STAGE"/thps_p8 "$STAGE"/thps_p8_* "$STAGE"/*.dylib; do
+      if [ -f "$f" ]; then
+        codesign --force --sign - --timestamp=none "$f"
       fi
     done
     ;;
@@ -324,10 +360,12 @@ for f in "$STAGE"/*; do
   # Project source names and diagnostics may remain; the directory that held
   # them on the builder may not.
   build_path_pattern='^[A-Za-z]:\\(a|actions|builds|Users|src|tmp)\\|^/(home|Users|src|sdkprefix|builds|__w)/|^/tmp/(thp8|rexglue|project8)'
-  build_paths="$(strings "$f" 2>/dev/null | grep -E "$build_path_pattern" || true)"
+  build_paths="$(strings "$f" 2>/dev/null | grep -E "$build_path_pattern" \
+    | grep -Ev '^/tmp/(%sXXXXXX|rexglue-memory-XXXXXX)$' || true)"
   case "$(file -bL "$f" 2>/dev/null)" in
     *PE32*)
-      build_paths+=$'\n'"$(strings -el "$f" 2>/dev/null | grep -E "$build_path_pattern" || true)"
+      build_paths+=$'\n'"$(strings -el "$f" 2>/dev/null | grep -E "$build_path_pattern" \
+        | grep -Ev '^/tmp/(%sXXXXXX|rexglue-memory-XXXXXX)$' || true)"
       ;;
   esac
   if [ -n "${build_paths//$'\n'/}" ]; then

@@ -329,6 +329,21 @@ int RunChild(const std::string& game, const std::vector<std::string>& args) {
     return 127;
   }
   if (pid == 0) {
+#if defined(__APPLE__)
+    // The portable Mac archive carries its Vulkan loader and MoltenVK beside
+    // the game. A GUI launch does not inherit Homebrew's shell environment, so
+    // point the child at those packaged files before dyld and the loader run.
+    const std::string game_dir = DirectoryOf(game);
+    std::string library_path = game_dir;
+    if (const char* inherited = std::getenv("DYLD_LIBRARY_PATH");
+        inherited && *inherited) {
+      library_path += ":";
+      library_path += inherited;
+    }
+    const std::string driver_manifest = game_dir + "/MoltenVK_icd.json";
+    ::setenv("DYLD_LIBRARY_PATH", library_path.c_str(), 1);
+    ::setenv("VK_ICD_FILENAMES", driver_manifest.c_str(), 1);
+#endif
     ::execv(game.c_str(), argv.data());
     std::fprintf(stderr, "thps_p8_launch: cannot exec %s: %s\n", game.c_str(),
                  std::strerror(errno));
