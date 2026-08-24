@@ -369,12 +369,18 @@ for f in "$STAGE"/*; do
   # Project source names and diagnostics may remain; the directory that held
   # them on the builder may not.
   build_path_pattern='^[A-Za-z]:\\(a|actions|builds|Users|src|tmp)\\|^/(home|Users|src|sdkprefix|builds|__w)/|^/tmp/(thp8|rexglue|project8)'
+  # Microsoft's app-local VC runtime carries Microsoft's own fixed build PDB
+  # prefix. It identifies no player, maintainer, repository, or runner. Keep
+  # rejecting every other Actions path, including one emitted by our builds.
+  microsoft_crt_pdb='^[A-Za-z]:\\a\\_work\\1\\s\\binaries\\amd64ret\\bin\\amd64'
   build_paths="$(strings "$f" 2>/dev/null | grep -E "$build_path_pattern" \
-    | grep -Ev '^/tmp/(%sXXXXXX|rexglue-memory-XXXXXX)$' || true)"
+    | grep -Ev '^/tmp/(%sXXXXXX|rexglue-memory-XXXXXX)$' \
+    | grep -Ev "$microsoft_crt_pdb" || true)"
   case "$(file -bL "$f" 2>/dev/null)" in
     *PE32*)
       build_paths+=$'\n'"$(strings -el "$f" 2>/dev/null | grep -E "$build_path_pattern" \
-        | grep -Ev '^/tmp/(%sXXXXXX|rexglue-memory-XXXXXX)$' || true)"
+        | grep -Ev '^/tmp/(%sXXXXXX|rexglue-memory-XXXXXX)$' \
+        | grep -Ev "$microsoft_crt_pdb" || true)"
       ;;
   esac
   if [ -n "${build_paths//$'\n'/}" ]; then
