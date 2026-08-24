@@ -10,9 +10,8 @@
 // A console command runs on the UI thread, which has no guest thread state. So
 // a cheat implemented as a direct call from a console callback does not fail -
 // it silently succeeds at doing nothing, which is the single worst failure mode
-// available to us. `prove-the-mechanism-engaged` is a standing rule in this
-// workspace precisely because "no effect" and "not applied" are indistinguish-
-// able after the fact.
+// available to us. Counters are required here because "no effect" and "not
+// applied" are otherwise indistinguishable after the fact.
 //
 // So: console commands POST closures here, and a disconnected input driver
 // DRAINS them after the title polls its real/scripted pads. Every post is counted and

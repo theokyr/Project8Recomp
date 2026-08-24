@@ -29,7 +29,7 @@
 // TESTED: Linux and macOS. The Apple path was built natively on arm64 and used
 // for the attract, Free Skate and career fixture launches on 2026-08-02.
 // Windows remains written against documented APIs and compile-guarded, but has
-// not been built or run in this workspace.
+// not been exercised on real Windows hardware.
 
 #pragma once
 

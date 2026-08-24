@@ -14,8 +14,8 @@
 // window. Typing is a keyboard activity, so with the pointer anywhere else -
 // which is where it naturally sits while both hands are on the keys - every
 // character typed into the console is ALSO delivered to `MnkInputDriver` and
-// therefore to the guest pad. This workspace always runs `--mnk_mode=true`
-// (the Makefile forces it; the manifest calls it required), so in practice
+// therefore to the guest pad. This title enables `--mnk_mode=true` in its
+// normal launch configuration, so in practice
 // typing `cheat_warp 100 0 250` in Free Skate makes the skater jump, grind and
 // bail while you type it.
 //

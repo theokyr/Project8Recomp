@@ -386,8 +386,8 @@ int RunChild(const std::string& game, const std::vector<std::string>& args) {
 // stdout only, and only under --check. Everything the text path prints keeps
 // going to stderr byte-for-byte, so adding --json cannot change what a human or
 // an existing script sees; the two streams carry the same facts in two shapes.
-// The envelope matches tools/xex-tools' --json convention so the workspace has
-// one, not two.
+// Keep one stable envelope for every machine-readable disc-check result rather
+// than inventing a second shape for this entry point.
 
 std::string JsonEscape(const std::string& in) {
   std::string out;

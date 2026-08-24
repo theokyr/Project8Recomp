@@ -1,14 +1,13 @@
 # Changelog
 
-## v0.2.1: accepted Steam Deck frontier refresh
+## v0.2.1: Steam Deck performance refresh
 
-This patch release ships the latest measured Steam Deck performance work. On
-the deterministic 2,600–2,799-draw Funpark fixture, the accepted build averaged
-**25.332 ms** per frame and **39.48 effective FPS**, a 1.16% frame-time
-improvement in its same-binary promotion gate. It also restores a complete
-Apple Silicon archive and improves the launcher's player-facing guidance. The
-supported disc identity, existing executable names, save locations, and
-launcher flow are unchanged.
+This patch release pushes Steam Deck performance further in busy scenes. The
+exact Linux release archive averaged **25.00 ms per frame / 40.01 effective
+FPS** in a deterministic Funpark view with roughly 2,667 draws per frame. It
+also restores a complete Apple Silicon archive and improves the launcher's
+player-facing guidance. The supported disc identity, existing executable
+names, save locations, and launcher flow are unchanged.
 
 ### Adjacent texture descriptor-set reuse
 
@@ -71,11 +70,27 @@ right-click → Open step still applies.
 The exact release candidate was exercised on a 2020 Apple M1 MacBook Pro. Its
 packaged supervisor started the game, the bundled Vulkan loader and MoltenVK
 were loaded, and the marked fixture reached a visually verified Funpark frame
-at 2,627 draws. This restores functional support, but it is not a performance
-claim. The 2,500-plus-draw rows averaged **240.53 ms / 4.16
-effective FPS** (234.31 ms p50, 253.32 ms p95), while the process used roughly
-**317% CPU** during the run. Apple Silicon remains too slow for comfortable
-play in that severe scene.
+at 2,704 draws. This restores functional support, but it is not a performance
+claim. Its 2,500-plus-draw rows averaged
+**236.79 ms / 4.22 effective FPS** (233.75 ms p50, 251.29 ms p95), while the
+process used roughly **317% CPU** during the run. Apple Silicon remains too
+slow for comfortable play in that severe scene.
+
+### Exact release archives exercised
+
+The complete Linux and Windows release candidates were unpacked and tested on
+a Steam Deck in Game Mode, using the same marked Funpark view as the performance
+work. The Linux archive averaged **24.996 ms / 40.01 effective FPS**, with
+24.998 ms p50, 27.003 ms p95, roughly 2,667 draws per frame, and **257.6%
+process CPU**. The Windows archive rendered all nine expected checkpoints
+through Proton 10. It held the player-default 30 FPS presentation mode at
+**33.31 / 34.49 ms p50 / p95**; uncapped, it measured **27.83 / 32.02 ms p50 /
+p95**, or 35.64 effective FPS.
+
+Proton reparents the Windows game outside the test supervisor, so this run does
+not provide a trustworthy process-CPU comparison. These results prove the
+archive, launcher handoff, Vulkan path, scene loading, and pacing under Proton.
+They still do not substitute for a test on real Windows hardware.
 
 ## v0.2.0: Steam Deck performance and release packaging
 
@@ -151,8 +166,8 @@ native vertex/index residency and unpack paths, upload prefetch, and exact
 reuse of adjacent sampler, texture-request, and Vulkan view work. Every lever
 can still be disabled through the launcher's Performance setting.
 
-On the deterministic late-game Funpark fixture, the accepted Steam Deck LCD
-build's three-run uncapped promotion median measured approximately 2,667 draws
+On the deterministic late-game Funpark fixture, the v0.2.0 Steam Deck LCD
+build's three-run uncapped median measured approximately 2,667 draws
 per frame, **25.307 ms mean**, **25.000 ms p50**, **27.015 ms p95**, **39.51
 effective FPS**, and **257.1% process CPU** (about 2.57 logical cores). With the
 player-default frame cap, the release-candidate archive held a stable 30 FPS

@@ -40,14 +40,14 @@ C++ ahead of time and compiled into a normal executable for your machine.
 | --- | --- |
 | Linux x86_64 | **Verified.** The main development and testing platform. |
 | macOS arm64 | **Complete v0.2.1 archive verified on Apple M1.** Self-contained and correct, but too slow in heavy scenes; see [known issues](docs/KNOWN_ISSUES.md). |
-| Windows x86_64 | **Experimental. Complete v0.2.0 build tested under Proton; not yet verified on real Windows.** |
+| Windows x86_64 | **Experimental. Complete v0.2.1 archive tested under Proton; not yet verified on real Windows.** |
 
 The Windows situation, plainly: everything is cross-compiled from Linux,
-because nobody on this project owns a Windows machine. The complete v0.2.0
+because nobody on this project owns a Windows machine. The complete v0.2.1
 archive was tested through Proton 10 on a Steam Deck: the launcher and game
 started, the late-game 2,600-plus-draw fixture rendered correctly, and the
-default frame cap sustained a 33.30 ms median there. Uncapped, the same Windows
-build measured 28.00 ms median versus 25.00 ms for the native Linux build.
+default frame cap sustained a 33.31 ms median there. Uncapped, the same Windows
+build measured 27.83 ms median versus 25.00 ms for the native Linux build.
 That is useful compatibility and performance evidence, but it is still not a
 test on Windows. Proton is a different implementation of the same interfaces,
 and the places where it differs are precisely where an untested port can break.
