@@ -116,8 +116,8 @@ bool OpenFolder(const std::filesystem::path& path);
 //
 // Replace, not spawn: the launcher is one-shot and never comes back, so there
 // is nothing for it to wait for, and replacing the image means no orphaned
-// parent is left holding the window's GPU file descriptors while the game runs
-// while the game runs. Windows has no execve worth the name, so that side
+// parent is left holding the window's GPU file descriptors while the game
+// runs. Windows has no execve worth the name, so that side
 // spawns and exits - documented at the implementation, because it is a real
 // behavioural difference and the fd-inheritance question has to be answered
 // differently there.

@@ -3,6 +3,7 @@
 
 #include <cerrno>
 #include <csignal>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 
@@ -167,6 +168,27 @@ bool OpenFolder(const std::filesystem::path& path) {
 }
 
 [[noreturn]] void ExecReplace(const std::vector<std::string>& argv) {
+#if defined(__linux__)
+  // SteamOS installs RenderDoc's loader system-wide. The runtime probes for
+  // that library by name, so merely having the developer tool installed makes
+  // every player launch attach it and pay its Vulkan-hook overhead. Release
+  // archives carry a tiny library with no RENDERDOC_GetAPI in no-renderdoc/;
+  // put it first for every supported launcher path. Developers can opt back
+  // into the system library explicitly when they actually want a capture.
+  if (const char* allow = std::getenv("THPS_P8_RENDERDOC");
+      !allow || std::strcmp(allow, "1") != 0) {
+    const std::filesystem::path shadow = SelfDir() / "no-renderdoc";
+    if (std::filesystem::is_regular_file(shadow / "librenderdoc.so")) {
+      std::string library_path = shadow.string();
+      if (const char* inherited = std::getenv("LD_LIBRARY_PATH");
+          inherited && *inherited) {
+        library_path += ":";
+        library_path += inherited;
+      }
+      ::setenv("LD_LIBRARY_PATH", library_path.c_str(), 1);
+    }
+  }
+#endif
   std::vector<char*> raw;
   raw.reserve(argv.size() + 1);
   for (const std::string& arg : argv) raw.push_back(const_cast<char*>(arg.c_str()));

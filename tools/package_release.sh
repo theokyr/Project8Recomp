@@ -168,6 +168,26 @@ if [ "$PLATFORM" = "windows-x86_64" ]; then
   done
 fi
 
+if [ "$PLATFORM" = "linux-x86_64" ]; then
+  # SteamOS carries librenderdoc.so as part of the base system. The runtime
+  # probes for it by name and otherwise attaches the debugger to ordinary
+  # player launches. Ship a dependency-free shadow that loads successfully but
+  # exports no RENDERDOC_GetAPI; the launcher puts this directory first unless
+  # THPS_P8_RENDERDOC=1 was requested explicitly.
+  compiler="${CC:-}"
+  if [ -z "$compiler" ]; then
+    compiler="$(command -v clang || command -v cc || command -v gcc || true)"
+  fi
+  [ -n "$compiler" ] || {
+    echo "a C compiler is required to build the SteamOS RenderDoc guard" >&2
+    exit 1
+  }
+  mkdir -p "$STAGE/no-renderdoc"
+  printf '%s\n' 'void thps_p8_renderdoc_stub(void) {}' | \
+    "$compiler" -x c -shared -nostdlib -fPIC -o \
+      "$STAGE/no-renderdoc/librenderdoc.so" -
+fi
+
 if [ "$PLATFORM" = "macos-arm64" ]; then
   # Vulkan is not a macOS system API. v0.1.0 happened to work on the build Mac
   # because Homebrew supplied both the loader and MoltenVK; its archive did not

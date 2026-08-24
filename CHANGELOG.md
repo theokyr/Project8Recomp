@@ -31,6 +31,20 @@ the accepted adjacent reuse path, default-off sequence capture used to measure
 it, reproducible source-path mapping, and a usable clang-cl warning level;
 capture is inactive during normal play.
 
+### Steam Deck launches match the measured path
+
+SteamOS includes RenderDoc's Vulkan loader as a system library. The runtime
+probes for that library by name, so the v0.2.0 portable ZIP could attach the
+debugger during an ordinary player launch even though no capture was requested.
+That adds substantial per-draw overhead in the scenes where the Deck needs the
+performance work most.
+
+The Linux archive now carries a dependency-free guard library, and both
+`Project8Recomp` and the existing GUI launcher put it first for the game handoff.
+This makes the normal portable launch match the no-debugger condition used for
+the published Steam Deck measurements. Developers can still request the system
+RenderDoc library explicitly with `THPS_P8_RENDERDOC=1`.
+
 ### Player-facing wording
 
 The launcher now says directly that the port contains no game content and does
