@@ -33,7 +33,7 @@ the SDK tree until the entire series is present.
   default-off draw-census capture used to verify renderer changes; neither is
   active during normal play.
 - `0028`: developer-console launch commands used by repeatable smoke fixtures.
-- `0037`: removes build-machine source and binary directory prefixes from
+- `0037`: removes build-machine source, binary and PDB directory prefixes from
   diagnostic strings that remain in stripped release binaries.
 - `0038`: uses clang-cl's `/W4` warning level instead of its pathological
   `-Wall`/`/Wall` interpretation during Windows cross-builds.

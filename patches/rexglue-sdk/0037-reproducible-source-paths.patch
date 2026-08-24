@@ -1,7 +1,7 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -80,6 +80,24 @@ if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "18.0")
+@@ -80,6 +80,25 @@ if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "18.0")
      message(FATAL_ERROR "ReXGlue requires Clang 18 or newer (found ${CMAKE_CXX_COMPILER_VERSION})")
  endif()
  
@@ -16,6 +16,7 @@ diff --git a/CMakeLists.txt b/CMakeLists.txt
 +        "/clang:-ffile-prefix-map=${REXGLUE_SOURCE_ROOT}=."
 +        "/clang:-ffile-prefix-map=${REXGLUE_BINARY_ROOT}=./build"
 +    )
++    add_link_options("/PDBALTPATH:%_PDB%")
 +else()
 +    add_compile_options(
 +        "-ffile-prefix-map=${REXGLUE_SOURCE_ROOT}=."
