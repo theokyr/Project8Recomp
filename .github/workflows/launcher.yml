@@ -6,7 +6,7 @@
 # SDK, so it builds anywhere.
 #
 # Windows is published as experimental: hosted CI proves it builds, while the
-# complete release candidate is separately exercised under Proton before tag.
+# complete release build is separately exercised under Proton before tagging.
 
 name: Launcher
 

@@ -6,12 +6,12 @@ v0.3.0 moves the port to ReXGlue 0.10 and carries the title-specific runtime
 work onto the new SDK. The result is a substantial improvement in the heaviest
 repeatable scene we use for Steam Deck testing, lower process CPU use, working
 Apple Silicon presentation with the current runtime, and a refreshed Windows
-candidate. The supported disc, save and settings locations, setup flow, and all
+build. The supported disc, save and settings locations, setup flow, and all
 existing executable names remain unchanged.
 
 ### Steam Deck performance
 
-The exact native Linux candidate was tested in a deterministic late-game
+The exact native Linux release build was tested in a deterministic late-game
 Funpark view averaging about 2,665 draws per frame. Compared with the v0.2.1
 release archive on the same Steam Deck LCD and fixture:
 
@@ -47,7 +47,7 @@ guest waits. Each path still has an individual runtime switch for debugging.
 
 ### Apple Silicon presentation
 
-The first ReXGlue 0.10 candidate produced audio and valid internal screenshots
+The first ReXGlue 0.10 test build produced audio and valid internal screenshots
 while the macOS window stayed black. This was traced to the presentation layer,
 and the release now bundles MoltenVK 1.4.2. A fresh marked run on a 2020 Apple
 M1 MacBook Pro rendered the complete Funpark view correctly at about 2,668
@@ -64,11 +64,12 @@ the first time they launch it.
 
 ### Windows status and issue #1
 
-The complete Windows candidate was unpacked and exercised through Proton 10 in
-Steam Deck Game Mode. The launcher handoff and Vulkan path worked, and all nine
-marked Funpark checkpoints rendered. The player-default path measured **33.32 /
-34.25 ms p50 / p95**, holding its intended 30 FPS presentation. Uncapped, it
-measured **27.55 ms mean / 36.30 effective FPS / 27.01 ms p50 / 30.99 ms p95**.
+The complete Windows release build was unpacked and exercised through Proton
+10 in Steam Deck Game Mode. The launcher handoff and Vulkan path worked, and
+all nine marked Funpark checkpoints rendered. The player-default path measured
+**33.32 / 34.25 ms p50 / p95**, holding its intended 30 FPS presentation.
+Uncapped, it measured **27.55 ms mean / 36.30 effective FPS / 27.01 ms p50 /
+30.99 ms p95**.
 That is a small, non-regressing improvement over the v0.2.1 Proton result.
 
 The high-resolution Windows pacing and bounded wait fixes introduced after
