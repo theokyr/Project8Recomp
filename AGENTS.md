@@ -84,8 +84,8 @@ implying a machine confirmed it. Do not fake a screenshot, and do not describe a
 headless run as evidence that a control works.
 
 **Windows is unverified in the same way, only more so.** A community report
-confirms that v0.1.0 started on Windows 10, but the maintainers have not run the
-complete v0.2.0 build on real Windows hardware. Never describe it as verified,
+confirms that v0.1.0 started on Windows 10, but the maintainers have not run a
+current complete build on real Windows hardware. Never describe it as verified,
 and never describe a compatibility-layer result as evidence about real
 Windows.
 

@@ -83,15 +83,16 @@ const std::vector<std::pair<std::string, std::string>>& Settings::PerformanceFla
   // wave before the render pass; adjacent sampler reuse avoids redundant
   // same-submission Vulkan sampler lookups; exact texture-request reuse skips
   // an unchanged binding and image-usage walk; exact last-view reuse bypasses
-  // the Vulkan view-key map for an immediately repeated request; the timer
-  // queue blocks between deadlines instead of yield-spinning; the guest
+  // the Vulkan view-key map for an immediately repeated request; adjacent
+  // descriptor-set reuse skips an exact repeated stage allocation and write;
+  // the timer queue blocks between deadlines instead of yield-spinning; the guest
   // empty-ring wait backs off
   // after a bounded poll interval or blocks on its exact producer event; the
   // render thread blocks on the actual swap-complete counter producer; the
   // title's hot u8x4 render-preparation unpack bypasses the full guest vector
   // register model; the title's full vertex-format record unpack does the same
   // for the fixed 252-byte-to-496-byte transform, and its x86 SIMD path keeps
-  // the exact transform while vectorizing the packed decodes. All sixteen
+  // the exact transform while vectorizing the packed decodes. All seventeen
   // default OFF in the runtime because they are project patches rather than
   // upstream behaviour - which is exactly why the launcher has to ask for them.
   static const std::vector<std::pair<std::string, std::string>> flags = {
@@ -104,6 +105,7 @@ const std::vector<std::pair<std::string, std::string>>& Settings::PerformanceFla
       {"gpu_sampler_set_reuse", "true"},
       {"gpu_texture_request_reuse", "true"},
       {"gpu_texture_last_view_cache", "true"},
+      {"gpu_texture_descriptor_set_adjacent_reuse", "true"},
       {"timer_queue_blocking_wait", "true"},
       {"guest_ring_wait_backoff", "true"},
       {"guest_ring_wait_event", "true"},

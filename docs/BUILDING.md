@@ -38,8 +38,8 @@ You will need:
 
 1. **The rexglue SDK**, built with the patches in `patches/rexglue-sdk/`.
    Apply them in the machine-readable order in `patches/rexglue-sdk/series` —
-   it is not numeric order, and the README says why. Without them the game runs about
-   four times slower, and on macOS it does not run at all.
+   it is not numeric order, and the README says why. Without them the game runs
+   about four times slower, and on macOS it does not run at all.
 2. **Your extracted game data**, which the launcher produces, or which you can
    extract yourself with `thps_p8_identify --identify_disc=... --extract_to=...`.
 3. **Codegen**, run against your `default.xex` using a local copy of
@@ -115,7 +115,7 @@ launcher's assets. The GPU plugin is the easy one to forget: without
 `librexgpu-xenos*`, the game starts, opens a window and draws nothing.
 
 ```sh
-tools/package_release.sh --platform linux-x86_64 --version v0.2.0 \
+tools/package_release.sh --platform linux-x86_64 --version vX.Y.Z \
   --game build/game --launcher build/launcher --identify build/identify \
   --sdk /path/to/your/sdk/prefix --out dist
 ```

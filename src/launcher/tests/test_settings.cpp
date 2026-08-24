@@ -215,6 +215,8 @@ void TestPerformanceIsOnUnlessTurnedOff() {
         "unset performance still enables exact texture-request reuse");
   Check(Has(unset, "--gpu_texture_last_view_cache=true"),
         "unset performance still enables exact last-view reuse");
+  Check(Has(unset, "--gpu_texture_descriptor_set_adjacent_reuse=true"),
+        "unset performance still enables adjacent descriptor-set reuse");
   Check(Has(unset, "--timer_queue_blocking_wait=true"),
         "unset performance still blocks the idle timer queue");
   Check(Has(unset, "--guest_ring_wait_backoff=true"),

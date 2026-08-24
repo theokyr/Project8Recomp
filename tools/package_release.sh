@@ -4,7 +4,7 @@
 # This is the release artifact: unpack, run the launcher, point it at your own
 # disc image, play. It carries the runtime and no files copied from the disc.
 #
-#   tools/package_release.sh --platform linux-x86_64 --version v0.2.0 \
+#   tools/package_release.sh --platform linux-x86_64 --version vX.Y.Z \
 #     --game <dir with thps_p8> --launcher <dir with thps_p8_gui> \
 #     --identify <dir with thps_p8_identify> --sdk <sdk prefix>
 #

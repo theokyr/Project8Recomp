@@ -96,8 +96,8 @@
 			<div class="panel panel-about">
 				<p class="subtitle">
 					A native port of the Xbox 360 release, built by static recompilation.
-					It includes no original game files: everything it plays came from
-					the disc image you supplied.
+					It contains no game content: everything it plays came from the disc
+					image you supplied.
 				</p>
 				<p class="subtitle">
 					Not affiliated with, endorsed by, or connected to Activision,
@@ -128,7 +128,7 @@
 			</div>
 
 			<p class="footer">
-				No original game files are included or downloaded.
+				This port contains no game content and will never download any.
 				Your disc is read, never modified, and never sent anywhere.
 			</p>
 		</div>

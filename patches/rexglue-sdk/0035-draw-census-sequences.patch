@@ -1,0 +1,174 @@
+diff --git a/src/graphics/vulkan/command_processor.cpp b/src/graphics/vulkan/command_processor.cpp
+index f50344b..2af0992 100644
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -2456,12 +2456,11 @@ void VulkanCommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontb
+     if (REXCVAR_GET(trace_gpu_stream)) {
+       census_mode_flags |= draw_census::kModeTraceGpuStream;
+     }
+-    const bool census_was_open = draw_census_->HasOpenCapture();
+-    draw_census_->OnSwap(
++    const bool census_started = draw_census_->OnSwap(
+         kernel_state_ ? kernel_state_->title_id() : 0, draw_census_swap_ordinal_, counter(),
+         GetCurrentFrame(), GetCurrentSubmission(), census_mode_flags,
+         rex::perf::GetSnapshotCounter(rex::perf::CounterId::kDrawCalls));
+-    if (!census_was_open && draw_census_->IsRecording()) {
++    if (census_started) {
+       std::memset(draw_census_float_dirty_, 0, sizeof(draw_census_float_dirty_));
+       std::memset(draw_census_fetch_dirty_, 0, sizeof(draw_census_fetch_dirty_));
+       draw_census_boolloop_dirty_writes_ = 0;
+diff --git a/src/graphics/vulkan/draw_census.cc b/src/graphics/vulkan/draw_census.cc
+index 5523fa7..de73ce6 100644
+--- a/src/graphics/vulkan/draw_census.cc
++++ b/src/graphics/vulkan/draw_census.cc
+@@ -1,6 +1,6 @@
+ /**
+  ******************************************************************************
+- * ReXGlue : Xenos GPU plugin - single-frame draw census                     *
++ * ReXGlue : Xenos GPU plugin - bounded frame-sequence draw census           *
+  ******************************************************************************
+  * Released under the BSD license - see LICENSE in the root for more details. *
+  */
+@@ -27,11 +27,13 @@
+ #endif
+ 
+ REXCVAR_DEFINE_STRING(gpu_census_dir, "", "GPU/Vulkan",
+-                      "Directory for one-frame draw census captures");
++                      "Directory for draw census captures");
+ REXCVAR_DEFINE_STRING(gpu_census_tag, "", "GPU/Vulkan",
+                       "Build identifier stored in draw census headers");
+ REXCVAR_DEFINE_INT32(gpu_census_capacity_draws, 4096, "GPU/Vulkan",
+                      "Maximum draw records in one draw census capture");
++REXCVAR_DEFINE_INT32(gpu_census_sequence_frames, 1, "GPU/Vulkan",
++                     "Consecutive frames written by one draw census capture request (1-8)");
+ 
+ // Defined by rexcore. The GPU plugin reaches it through the import library.
+ REXCVAR_DECLARE(std::string, perf_log_csv);
+@@ -82,7 +84,7 @@ void RequestCapture() {
+ }  // namespace
+ 
+ REXCVAR_DEFINE_COMMAND(gpu_census_capture, RequestCapture, "GPU/Vulkan",
+-                       "Capture the next complete guest GPU frame to a .dcen file");
++                       "Capture the configured complete guest GPU frame sequence");
+ REXCVAR_DEFINE_COMMAND(gpu_census_status, LogStatus, "GPU/Vulkan",
+                        "Log draw census request and completion counters");
+ 
+@@ -187,7 +189,8 @@ bool Recorder::Start(uint32_t title_id, uint64_t guest_swap_ordinal,
+   return true;
+ }
+ 
+-void Recorder::Complete(uint64_t guest_swap_ordinal_close, int64_t draw_calls_snapshot) {
++void Recorder::Complete(uint64_t guest_swap_ordinal_close, int64_t draw_calls_snapshot,
++                        bool release_storage) {
+   const uint32_t completed = g_completed.fetch_add(1, std::memory_order_relaxed) + 1;
+ 
+   TrailerRecord trailer{};
+@@ -234,36 +237,56 @@ void Recorder::Complete(uint64_t guest_swap_ordinal_close, int64_t draw_calls_sn
+   recording_ = false;
+   capture_truncated_ = false;
+   buffer_.clear();
+-  buffer_.shrink_to_fit();
+   shaders_seen_.clear();
+-  shaders_seen_.shrink_to_fit();
++  if (release_storage) {
++    buffer_.shrink_to_fit();
++    shaders_seen_.shrink_to_fit();
++  }
+ }
+ 
+-void Recorder::OnSwap(uint32_t title_id, uint64_t guest_swap_ordinal,
++bool Recorder::OnSwap(uint32_t title_id, uint64_t guest_swap_ordinal,
+                       uint64_t guest_vblank_counter, uint64_t vk_frame_current,
+                       uint64_t vk_submission, uint32_t mode_flags,
+                       int64_t draw_calls_snapshot) {
+   if (recording_) {
+     // Requests made while the capture frame was open are deliberately not
+-    // queued behind it: each command means exactly one next frame.
++    // queued behind its already-latched sequence.
+     const uint32_t requests_during_capture =
+         g_requests_pending.exchange(0, std::memory_order_acq_rel);
+     if (requests_during_capture) {
+       g_dropped.fetch_add(requests_during_capture, std::memory_order_relaxed);
+     }
+-    Complete(guest_swap_ordinal, draw_calls_snapshot);
+-    return;
++    const bool continue_sequence = sequence_frames_remaining_ != 0;
++    Complete(guest_swap_ordinal, draw_calls_snapshot, !continue_sequence);
++    if (continue_sequence) {
++      if (Start(title_id, guest_swap_ordinal, guest_vblank_counter, vk_frame_current,
++                vk_submission, mode_flags)) {
++        --sequence_frames_remaining_;
++        return true;
++      } else {
++        sequence_frames_remaining_ = 0;
++      }
++    }
++    return false;
+   }
+ 
+   const uint32_t requests = g_requests_pending.exchange(0, std::memory_order_acq_rel);
+   if (!requests) {
+-    return;
++    return false;
+   }
+   if (requests > 1) {
+     g_dropped.fetch_add(requests - 1, std::memory_order_relaxed);
+   }
+-  Start(title_id, guest_swap_ordinal, guest_vblank_counter, vk_frame_current,
+-        vk_submission, mode_flags);
++  sequence_frames_remaining_ =
++      uint32_t(std::clamp(REXCVAR_GET(gpu_census_sequence_frames), 1, 8));
++  if (Start(title_id, guest_swap_ordinal, guest_vblank_counter, vk_frame_current,
++            vk_submission, mode_flags)) {
++    --sequence_frames_remaining_;
++    return true;
++  } else {
++    sequence_frames_remaining_ = 0;
++    return false;
++  }
+ }
+ 
+ bool Recorder::RecordShader(ShaderRecord record) {
+diff --git a/src/graphics/vulkan/draw_census.h b/src/graphics/vulkan/draw_census.h
+index cf1a7e5..52676c1 100644
+--- a/src/graphics/vulkan/draw_census.h
++++ b/src/graphics/vulkan/draw_census.h
+@@ -1,7 +1,7 @@
+ #pragma once
+ /**
+  ******************************************************************************
+- * ReXGlue : Xenos GPU plugin - single-frame draw census                     *
++ * ReXGlue : Xenos GPU plugin - bounded frame-sequence draw census           *
+  ******************************************************************************
+  * Released under the BSD license - see LICENSE in the root for more details. *
+  *
+@@ -250,7 +250,10 @@ class Recorder {
+   bool IsRecording() const { return recording_ && !capture_truncated_; }
+   bool HasOpenCapture() const { return recording_; }
+ 
+-  void OnSwap(uint32_t title_id, uint64_t guest_swap_ordinal,
++  // Returns true when this boundary opened a new capture frame. The caller
++  // uses that signal to reset its per-frame dirty-state tracking, including
++  // between members of one consecutive-frame sequence.
++  bool OnSwap(uint32_t title_id, uint64_t guest_swap_ordinal,
+               uint64_t guest_vblank_counter, uint64_t vk_frame_current,
+               uint64_t vk_submission, uint32_t mode_flags, int64_t draw_calls_snapshot);
+ 
+@@ -263,7 +266,8 @@ class Recorder {
+   bool Start(uint32_t title_id, uint64_t guest_swap_ordinal,
+              uint64_t guest_vblank_counter, uint64_t vk_frame_current,
+              uint64_t vk_submission, uint32_t mode_flags);
+-  void Complete(uint64_t guest_swap_ordinal_close, int64_t draw_calls_snapshot);
++  void Complete(uint64_t guest_swap_ordinal_close, int64_t draw_calls_snapshot,
++                bool release_storage);
+   bool Append(const void* data, size_t size, bool reserve_trailer = true);
+   void MarkTruncated();
+ 
+@@ -278,6 +282,7 @@ class Recorder {
+   uint32_t overflow_vertex_ = 0;
+   uint32_t overflow_texture_ = 0;
+   uint32_t overflow_sampler_ = 0;
++  uint32_t sequence_frames_remaining_ = 0;
+   uint64_t guest_swap_ordinal_open_ = 0;
+   size_t max_buffer_bytes_ = 0;
+   std::filesystem::path output_path_;

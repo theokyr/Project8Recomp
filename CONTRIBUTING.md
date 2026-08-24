@@ -16,8 +16,8 @@ closed without an answer.
 
 **A Windows report.** This is the single most valuable thing anyone can send
 right now. v0.1.0 started on one reported Windows 10 machine but performed
-poorly; the complete v0.2.0 build has only been exercised under Proton. Whether
-it works or falls over on Windows, we want to know — see the Windows issue
+poorly; current complete builds have only been exercised under Proton. Whether
+one works or falls over on Windows, we want to know — see the Windows issue
 template.
 
 **A hash from another regional disc.** The launcher accepts one release today.

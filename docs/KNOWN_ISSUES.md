@@ -1,6 +1,6 @@
 # Known issues
 
-As of v0.2.0.
+As of v0.2.1.
 
 ## In-level cutscenes run too fast without a frame cap
 
@@ -22,7 +22,7 @@ Every session where F5 appeared to help was also a capped session.
 The v0.1.0 Apple Silicon package works and reaches gameplay, but is not fast.
 The ~100 FPS figure comes from a desktop Linux machine with a discrete GPU and
 does not transfer: on an M1, Free Skate reaches gameplay at roughly 6 FPS. It
-is functionally correct and not performance-playable. There is no v0.2.0 macOS
+is functionally correct and not performance-playable. There is no v0.2.1 macOS
 package yet; v0.1.0 remains available from the previous release.
 
 ## Windows is mitigated and Proton-tested, not hardware-verified

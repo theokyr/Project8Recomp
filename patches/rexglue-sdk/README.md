@@ -28,8 +28,10 @@ the SDK tree until the entire series is present.
   real Windows hardware.
 - `0015`, `0017`-`0020`, `0027`: bound or block polling paths that otherwise
   burn CPU while waiting.
-- `0024`-`0026`, `0029`-`0034`: the accepted graphics residency, reuse, and
-  verification work used by the v0.2.0 performance preset.
+- `0024`-`0026`, `0029`-`0034`, `0036`: the accepted graphics residency and
+  reuse work used by the current performance preset. `0033` and `0035` add
+  default-off draw-census capture used to verify renderer changes; neither is
+  active during normal play.
 - `0028`: developer-console launch commands used by repeatable smoke fixtures.
 
 Every new patch must be listed exactly once in `series`.

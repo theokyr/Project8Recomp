@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.2.1 — accepted Steam Deck frontier refresh
+
+This patch release moves the public build from the p0p22 runtime configuration
+shipped in v0.2.0 to the accepted p0p39 Steam Deck frontier. Packaging,
+supported disc identity, executable names, save locations, and launcher flow
+are unchanged.
+
+### Adjacent texture descriptor-set reuse
+
+The Performance preset now enables one additional default-off Vulkan path. It
+reuses a texture descriptor set only when the immediately preceding request in
+the same submission has the exact same descriptor-set layout and ordered image
+views, layouts, and samplers. Submission and transient-pool boundaries clear
+the entry, and every mismatch follows the original allocation/write path.
+
+On the deterministic 2,600–2,799-draw Funpark fixture, the path matched
+**39.17%** of non-empty texture stages and avoided about **1,001 descriptor
+writes per frame**. A same-binary, cool-start six-run gate moved the
+median-of-three mean from **25.630 to 25.332 ms (-1.16%)**, effective FPS from
+**39.02 to 39.48**, with process CPU flat at roughly **257%**. The wider
+hash-table design was not shipped: although it found another 450 exact sets per
+frame, it regressed mean frame time by 0.21% in all three ordered comparisons.
+
+The patch inventory now contains 35 entries. The two new source patches add
+the accepted adjacent reuse path and default-off sequence capture used to
+measure it; capture is inactive during normal play.
+
+### Player-facing wording
+
+The launcher now says directly that the port contains no game content and will
+never download any. This is a wording clarification only: setup still reads a
+disc image supplied from the player's own copy, writes the extracted data into
+the portable install, and sends nothing elsewhere.
+
 ## v0.2.0 — Steam Deck performance and release packaging
 
 v0.2.0 promotes the runtime configuration measured on Steam Deck, fixes the

@@ -31,3 +31,5 @@ mmio_handler.patch
 0032-exact-texture-request-reuse.patch
 0033-draw-census.patch
 0034-exact-last-view-reuse.patch
+0035-draw-census-sequences.patch
+0036-adjacent-texture-descriptor-set-reuse.patch
