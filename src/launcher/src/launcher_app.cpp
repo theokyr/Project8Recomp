@@ -73,7 +73,7 @@ Copy CopyFor(State s) {
       return {"Copying your game", "This happens once. After it finishes you will not need the "
                                    "disc image again on this machine."};
     case State::kDone:
-      return {"Ready to play", "Your game is set up. This screen will not appear again."};
+      return {"Ready to play", "Setup is complete. Future launches go straight to Play."};
     case State::kFailNotDisc:
       return {"That file is not a game disc",
               "It does not look like a disc image. Choose the file you made from your "

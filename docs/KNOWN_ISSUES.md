@@ -1,6 +1,6 @@
 # Known issues
 
-As of v0.2.1.
+As of v0.3.0.
 
 ## In-level cutscenes run too fast without a frame cap
 
@@ -19,17 +19,18 @@ Every session where F5 appeared to help was also a capped session.
 
 ## macOS performance
 
-v0.2.1 restores a complete, self-contained Apple Silicon archive. It bundles
-the Vulkan loader and MoltenVK, so players do not need Homebrew. The exact
-archive was tested on a 2020 Apple M1 MacBook Pro: the packaged supervisor
-started the game, the packaged Vulkan libraries loaded, and the marked fixture
-reached a visually verified 2,704-draw Funpark frame.
+v0.3.0 ships a complete, self-contained Apple Silicon archive with the Vulkan
+loader and MoltenVK 1.4.2, so players do not need Homebrew. The release
+candidate was tested on a 2020 Apple M1 MacBook Pro: the supervisor started the
+game, the bundled Vulkan libraries loaded, and the marked fixture rendered a
+complete, visually verified Funpark view at about 2,668 draws per frame.
 
 It is functionally correct but not performance-playable in that severe scene.
-Across the fixture's 2,500-plus-draw rows, mean frame time was 236.79 ms (4.22
-effective FPS), with 233.75 ms p50 and 251.29 ms p95; the process used roughly
-317% CPU. The much higher Linux desktop and Steam Deck figures elsewhere in the
-documentation do not transfer to the base M1's MoltenVK path.
+Across 718 frames in the 2,600-2,799-draw bucket, mean frame time was 241.64 ms
+(4.14 effective FPS), with 235.96 ms p50 and 264.60 ms p95. CPU is not reported
+because the benchmark's process accounting is Linux-specific. The much higher
+Linux desktop and Steam Deck figures elsewhere in the documentation do not
+transfer to the base M1's MoltenVK path.
 
 The binaries are ad-hoc signed but not notarized. Gatekeeper therefore requires
 the right-click → Open step documented in the main README.
@@ -40,7 +41,7 @@ The launcher, disc worker, supervisor, and game are all built for the MSVC ABI
 and exercised under Proton. A community
 report confirms that v0.1.0 started on Windows 10, but its CPU use and pacing
 were unusable there. The maintainers do not own a Windows machine, so the
-complete v0.2.1 build has not been verified on real Windows hardware.
+complete v0.3.0 build has not been verified on real Windows hardware.
 
 What has been confirmed under the compatibility layer: the launcher opens and
 navigates, a real disc image is identified correctly, a full 4.7 GB extraction
@@ -63,17 +64,16 @@ deadline timer, and delivers a bounded number of elapsed vblanks after a late
 wake. Related guest waits now sleep or block on their actual producer instead
 of truncating sub-millisecond waits into yields.
 
-The complete v0.2.1 archive sustained a deterministic 2,600-plus-draw
+The complete v0.3.0 candidate sustained a deterministic 2,600-plus-draw
 late-game fixture under Proton 10 on a Steam Deck and rendered all nine marked
-checkpoints. It held the player-default 30 fps presentation mode at 33.31 /
-34.49 ms p50 / p95. Uncapped, it measured 27.83 / 32.02 ms versus native Linux
-at 25.00 / 27.00 ms, or 35.64 versus 40.01 effective FPS.
+checkpoints. It held the player-default 30 fps presentation mode at 33.32 /
+34.25 ms p50 / p95. Uncapped, it measured 27.55 ms mean, 27.01 / 30.99 ms p50 /
+p95, and 36.30 effective FPS. Native Linux in the same scene measured 21.94 ms
+mean, 22.00 / 23.00 ms p50 / p95, and 45.58 effective FPS.
 
-Wine reparents the game outside the test supervisor, so this v0.2.1 run does
-not provide a trustworthy process-CPU comparison. Earlier v0.2.0 lifetime
-snapshots put the detached Windows process at roughly 319–349% CPU, compared
-with 253–256% natively, but those figures are not precise enough for a release
-to claim a CPU improvement.
+Wine reparents the game outside the test supervisor, so this run does not
+provide a trustworthy process-CPU comparison. Its apparent zero reading is
+invalid and is not reported as CPU use.
 
 This is a concrete mitigation for the reported mechanism, with a measurable
 Proton overhead. Only a report from real Windows can tell us whether it fixes

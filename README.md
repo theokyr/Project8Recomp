@@ -39,18 +39,27 @@ C++ ahead of time and compiled into a normal executable for your machine.
 | Platform | Status |
 | --- | --- |
 | Linux x86_64 | **Verified.** The main development and testing platform. |
-| macOS arm64 | **Complete v0.2.1 archive verified on Apple M1.** Self-contained and correct, but too slow in heavy scenes; see [known issues](docs/KNOWN_ISSUES.md). |
-| Windows x86_64 | **Experimental. Complete v0.2.1 archive tested under Proton; not yet verified on real Windows.** |
+| macOS arm64 | **Verified on Apple M1.** The archive is self-contained and renders correctly, but heavy scenes are still too slow for comfortable play; see [known issues](docs/KNOWN_ISSUES.md). |
+| Windows x86_64 | **Experimental.** The complete archive works under Proton, but has not yet been tested on real Windows hardware. |
+
+### Steam Deck performance
+
+v0.3.0 substantially improves busy-scene performance. In a repeatable late-game
+Funpark view with about 2,667 draws per frame, the native Linux build improved
+from **40.01 to 45.58 effective FPS**. Mean frame time fell from **25.00 to
+21.94 ms**, p95 fell from **27.00 to 23.00 ms**, and process CPU fell from
+about **258% to 223%**. These are uncapped measurements from the same Steam
+Deck LCD and scene, not a claim that every area now holds 60 FPS.
 
 The Windows situation, plainly: everything is cross-compiled from Linux,
-because nobody on this project owns a Windows machine. The complete v0.2.1
-archive was tested through Proton 10 on a Steam Deck: the launcher and game
-started, the late-game 2,600-plus-draw fixture rendered correctly, and the
-default frame cap sustained a 33.31 ms median there. Uncapped, the same Windows
-build measured 27.83 ms median versus 25.00 ms for the native Linux build.
-That is useful compatibility and performance evidence, but it is still not a
-test on Windows. Proton is a different implementation of the same interfaces,
-and the places where it differs are precisely where an untested port can break.
+because nobody on this project owns a Windows machine. The complete v0.3.0
+archive was tested through Proton 10 on a Steam Deck. The launcher and game
+started, and the late-game 2,600-plus-draw fixture rendered every expected
+checkpoint. The player-default path held 30 FPS with a **33.32 / 34.25 ms p50 /
+p95**; uncapped, it measured **27.01 / 30.99 ms** and **36.30 effective FPS**.
+That is useful compatibility and performance evidence, but it is not a test on
+Windows. Proton is a different implementation of the same interfaces, and the
+places where it differs are precisely where an untested port can break.
 
 If you try the Windows launcher, please tell us what happened. "It opened and
 the buttons worked" is as useful to us as a crash report, and there is

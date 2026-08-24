@@ -1,5 +1,95 @@
 # Changelog
 
+## v0.3.0: ReXGlue 0.10 and a faster Steam Deck build
+
+v0.3.0 moves the port to ReXGlue 0.10 and carries the title-specific runtime
+work onto the new SDK. The result is a substantial improvement in the heaviest
+repeatable scene we use for Steam Deck testing, lower process CPU use, working
+Apple Silicon presentation with the current runtime, and a refreshed Windows
+candidate. The supported disc, save and settings locations, setup flow, and all
+existing executable names remain unchanged.
+
+### Steam Deck performance
+
+The exact native Linux candidate was tested in a deterministic late-game
+Funpark view averaging about 2,665 draws per frame. Compared with the v0.2.1
+release archive on the same Steam Deck LCD and fixture:
+
+| Metric | v0.2.1 | v0.3.0 | Change |
+| --- | ---: | ---: | ---: |
+| Mean frame time | 25.00 ms | **21.94 ms** | **-12.2%** |
+| Effective FPS | 40.01 | **45.58** | **+13.9%** |
+| p50 / p95 | 25.00 / 27.00 ms | **22.00 / 23.00 ms** | lower and tighter |
+| Process CPU | 257.6% | **223.1%** | **-34.5 points** |
+
+A separate six-run, cool-start comparison of the complete old and new runtime
+stacks confirmed the result. Mean frame time improved by 12.34%, effective FPS
+by 14.08%, and process CPU by 13.6%, with the new build winning all three
+ordered comparisons. The scene, draw work, launch settings, and screenshot
+checkpoints matched between both arms.
+
+These are uncapped heavy-scene measurements, not a locked-60 claim. The normal
+player setting still caps the game to preserve correct cutscene timing.
+
+### ReXGlue 0.10 migration
+
+The game manifest, generated-code integration, input hooks, and runtime patches
+have been updated for ReXGlue 0.10. The new public patch series starts from the
+upstream v0.10.0 tag and contains two self-contained patches: the complete
+Project 8 runtime stack and the required MoltenVK 1.4.2 update. This replaces
+the 37 incremental patches used by v0.2.1 and makes a fresh SDK reconstruction
+shorter and easier to audit.
+
+The accepted performance paths remain enabled by the launcher's Performance
+preset. They cover command processing, native vertex and index handling,
+resource residency and prefetch, repeated texture and sampler work, and bounded
+guest waits. Each path still has an individual runtime switch for debugging.
+
+### Apple Silicon presentation
+
+The first ReXGlue 0.10 candidate produced audio and valid internal screenshots
+while the macOS window stayed black. This was traced to the presentation layer,
+and the release now bundles MoltenVK 1.4.2. A fresh marked run on a 2020 Apple
+M1 MacBook Pro rendered the complete Funpark view correctly at about 2,668
+draws per frame, and its graphics were visually confirmed on the host display.
+
+This is a correctness fix, not a performance claim. That severe scene averaged
+**241.64 ms / 4.14 effective FPS**, with **235.96 ms p50** and **264.60 ms
+p95**. Apple Silicon remains too slow for comfortable play in busy areas. CPU
+is not reported because the fixture's process accounting is Linux-specific.
+
+The archive remains self-contained, ad-hoc signed, and not notarized. Players
+do not need Homebrew, but still need the documented right-click, **Open** step
+the first time they launch it.
+
+### Windows status and issue #1
+
+The complete Windows candidate was unpacked and exercised through Proton 10 in
+Steam Deck Game Mode. The launcher handoff and Vulkan path worked, and all nine
+marked Funpark checkpoints rendered. The player-default path measured **33.32 /
+34.25 ms p50 / p95**, holding its intended 30 FPS presentation. Uncapped, it
+measured **27.55 ms mean / 36.30 effective FPS / 27.01 ms p50 / 30.99 ms p95**.
+That is a small, non-regressing improvement over the v0.2.1 Proton result.
+
+The high-resolution Windows pacing and bounded wait fixes introduced after
+v0.1.0 remain in place, so this continues to mitigate the excessive CPU and
+below-speed behaviour reported in issue #1. Proton reparents the game outside
+the test supervisor, which makes its process-CPU reading invalid. Real Windows
+hardware is still unverified, so v0.3.0 does not claim that the original report
+is fully resolved.
+
+### Packaging and compatibility
+
+- Linux, macOS, and Windows continue to ship as complete portable archives.
+- `Project8Recomp` remains the recommended entry: it opens setup on a new
+  install, goes to Play after setup, and accepts `--gui` to show the launcher.
+- The four original `thps_p8*` executable names remain present for existing
+  shortcuts and installs.
+- The launcher continues to expose **Open save folder** and **Open logs folder**
+  buttons so backups and issue reports do not require finding hidden paths.
+- Release archives remain game-content-free and include file checksums,
+  licences, build information, the changelog, and all platform runtime files.
+
 ## v0.2.1: Steam Deck performance refresh
 
 This patch release pushes Steam Deck performance further in busy scenes. The
@@ -17,7 +107,7 @@ the same submission has the exact same descriptor-set layout and ordered image
 views, layouts, and samplers. Submission and transient-pool boundaries clear
 the entry, and every mismatch follows the original allocation/write path.
 
-On the deterministic 2,600–2,799-draw Funpark fixture, the path matched
+On the deterministic 2,600-2,799-draw Funpark fixture, the path matched
 **39.17%** of non-empty texture stages and avoided about **1,001 descriptor
 writes per frame**. A same-binary, cool-start six-run gate moved the
 median-of-three mean from **25.630 to 25.332 ms (-1.16%)**, effective FPS from
@@ -151,8 +241,8 @@ In a short menu window it measured **16.68 ms p50 / 17.71 ms p95**. In the
 marked 2,600-plus-draw Funpark window it sustained the same 30 fps presentation
 mode as native (**33.30 / 34.45 ms p50 / p95**). Uncapped, the Windows build
 under Proton measured **28.00 / 32.15 ms** against native Linux at **25.00 /
-27.99 ms**. The detached Windows process used roughly **319–349% CPU** across
-the two Funpark runs, compared with **253–256%** for native Linux. That is a
+27.99 ms**. The detached Windows process used roughly **319-349% CPU** across
+the two Funpark runs, compared with **253-256%** for native Linux. That is a
 real compatibility-layer cost, but the process remained bounded to about 3.5
 of the Deck's eight logical cores and did not reproduce v0.1.0's near-32 Hz
 pacing failure. Real Windows remains explicitly unverified, so this release

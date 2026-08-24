@@ -38,8 +38,10 @@ You will need:
 
 1. **The rexglue SDK**, built with the patches in `patches/rexglue-sdk/`.
    Apply them in the machine-readable order in `patches/rexglue-sdk/series`.
-   It is not numeric order, and the README says why. Without them the game runs
-   about four times slower, and on macOS it does not run at all.
+   Use `git apply --index`, as shown in that directory's README, so the
+   MoltenVK submodule update is applied along with the source changes. The
+   patches carry this title's required runtime, performance, fixture, and
+   macOS presentation work on top of ReXGlue v0.10.0.
 2. **Your extracted game data**, which the launcher produces, or which you can
    extract yourself with `thps_p8_identify --identify_disc=... --extract_to=...`.
 3. **Codegen**, run against your `default.xex` using a local copy of
