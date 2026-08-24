@@ -23,9 +23,10 @@ median-of-three mean from **25.630 to 25.332 ms (-1.16%)**, effective FPS from
 hash-table design was not shipped: although it found another 450 exact sets per
 frame, it regressed mean frame time by 0.21% in all three ordered comparisons.
 
-The patch inventory now contains 35 entries. The two new source patches add
-the accepted adjacent reuse path and default-off sequence capture used to
-measure it; capture is inactive during normal play.
+The patch inventory now contains 36 entries. The three new source patches add
+the accepted adjacent reuse path, default-off sequence capture used to measure
+it, and reproducible source-path mapping; capture is inactive during normal
+play.
 
 ### Player-facing wording
 

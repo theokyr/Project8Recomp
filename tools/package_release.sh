@@ -319,9 +319,20 @@ for f in "$STAGE"/*; do
       IFS=$old_ifs
       ;;
   esac
-  if strings "$f" 2>/dev/null | grep -qE "$(printf '/home/[a-z]|/Users/[a-z]')"; then
-    echo "!! $(basename "$f") contains an absolute home-directory path" >&2
-    strings "$f" 2>/dev/null | grep -oE "(/home|/Users)/[A-Za-z0-9._-]+[^\"' ]*" | sort -u | head -3 >&2
+  # __FILE__ strings survive debug stripping. Check the common Unix build
+  # roots plus the hosted Windows runner spelling (both ASCII and UTF-16LE).
+  # Project source names and diagnostics may remain; the directory that held
+  # them on the builder may not.
+  build_path_pattern='^[A-Za-z]:\\(a|actions|builds|Users|src|tmp)\\|^/(home|Users|src|sdkprefix|builds|__w)/|^/tmp/(thp8|rexglue|project8)'
+  build_paths="$(strings "$f" 2>/dev/null | grep -E "$build_path_pattern" || true)"
+  case "$(file -bL "$f" 2>/dev/null)" in
+    *PE32*)
+      build_paths+=$'\n'"$(strings -el "$f" 2>/dev/null | grep -E "$build_path_pattern" || true)"
+      ;;
+  esac
+  if [ -n "${build_paths//$'\n'/}" ]; then
+    echo "!! $(basename "$f") contains an absolute build-directory path" >&2
+    printf '%s\n' "$build_paths" | sed '/^$/d' | sort -u | head -3 >&2
     leaked=1
   fi
 done

@@ -33,6 +33,8 @@ the SDK tree until the entire series is present.
   default-off draw-census capture used to verify renderer changes; neither is
   active during normal play.
 - `0028`: developer-console launch commands used by repeatable smoke fixtures.
+- `0037`: removes build-machine source and binary directory prefixes from
+  diagnostic strings that remain in stripped release binaries.
 
 Every new patch must be listed exactly once in `series`.
 `tools/check_patch_series.sh` and CI check both directions: an unlisted patch

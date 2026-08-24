@@ -63,17 +63,48 @@ rexglue_setup_target(thps_p8)
 # clang-cl ignores the GNU spelling silently - it warns and carries on - so the
 # Windows build needs the /clang: passthrough or it quietly keeps leaking.
 function(thps_p8_anonymise_paths target)
+    # Resolve `..` before passing the mapping to Clang. The compiler compares
+    # path spellings literally, so `${CMAKE_CURRENT_SOURCE_DIR}/..` does not
+    # match the canonical path it writes into __FILE__ strings.
+    get_filename_component(_thps_source_root
+        "${CMAKE_CURRENT_SOURCE_DIR}/.." REALPATH)
+    get_filename_component(_thps_binary_root
+        "${CMAKE_CURRENT_BINARY_DIR}" REALPATH)
+
+    set(_thps_path_roots
+        "${_thps_source_root}=."
+        "${_thps_binary_root}=./build")
+
+    # Headers and the installed entrypoint sources also contribute __FILE__
+    # strings. Cover either supported SDK mode: an in-tree SDK for Windows, or
+    # an installed prefix for portable Linux builds.
+    if(REXSDK_DIR)
+        get_filename_component(_thps_sdk_root "${REXSDK_DIR}" REALPATH)
+        list(APPEND _thps_path_roots "${_thps_sdk_root}=./sdk")
+    elseif(rexglue_DIR)
+        get_filename_component(_thps_sdk_root
+            "${rexglue_DIR}/../../.." REALPATH)
+        list(APPEND _thps_path_roots "${_thps_sdk_root}=./sdk")
+    endif()
+
+    set(_thps_path_options)
+    foreach(_thps_mapping IN LISTS _thps_path_roots)
+        if(MSVC)
+            list(APPEND _thps_path_options
+                "/clang:-ffile-prefix-map=${_thps_mapping}")
+        else()
+            list(APPEND _thps_path_options
+                "-ffile-prefix-map=${_thps_mapping}")
+        endif()
+    endforeach()
+
     if(MSVC)
-        target_compile_options(${target} PRIVATE
-            "/clang:-ffile-prefix-map=$ENV{HOME}=."
-            "/clang:-ffile-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}/..=.")
+        target_compile_options(${target} PRIVATE ${_thps_path_options})
         # A PE debug directory otherwise records the absolute build-tree path
         # to the external PDB even though the PDB itself is not distributed.
         target_link_options(${target} PRIVATE "/PDBALTPATH:%_PDB%")
     else()
-        target_compile_options(${target} PRIVATE
-            "-ffile-prefix-map=$ENV{HOME}=."
-            "-ffile-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}/..=.")
+        target_compile_options(${target} PRIVATE ${_thps_path_options})
     endif()
 endfunction()
 

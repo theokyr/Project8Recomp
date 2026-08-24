@@ -1,0 +1,28 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -80,6 +80,24 @@ if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "18.0")
+     message(FATAL_ERROR "ReXGlue requires Clang 18 or newer (found ${CMAKE_CXX_COMPILER_VERSION})")
+ endif()
+ 
++# Keep build-machine paths out of diagnostics and other __FILE__ strings that
++# remain in stripped release binaries. Normalize first: Clang compares the
++# spelling literally, so a path ending in /build/.. does not match the
++# canonical source path emitted for an included file.
++get_filename_component(REXGLUE_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}" REALPATH)
++get_filename_component(REXGLUE_BINARY_ROOT "${CMAKE_CURRENT_BINARY_DIR}" REALPATH)
++if(MSVC)
++    add_compile_options(
++        "/clang:-ffile-prefix-map=${REXGLUE_SOURCE_ROOT}=."
++        "/clang:-ffile-prefix-map=${REXGLUE_BINARY_ROOT}=./build"
++    )
++else()
++    add_compile_options(
++        "-ffile-prefix-map=${REXGLUE_SOURCE_ROOT}=."
++        "-ffile-prefix-map=${REXGLUE_BINARY_ROOT}=./build"
++    )
++endif()
++
+ # Enforce x64 architecture
+ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+     message(FATAL_ERROR "ReXGlue only supports 64‑bit architectures (x86_64 or ARM64)")
