@@ -20,7 +20,7 @@
 
 [project]
 name = "thps_p8"
-sdk_version = "0.8.0"
+sdk_version = "0.10.0"
 game_root = "REPLACE_ME/sources/install-media/derived/disc"
 
 [entrypoint]

@@ -746,9 +746,18 @@ class ScriptInputDriver : public rex::input::InputDriver {
   // instead, so a scripted or replayed run always leaves evidence in the log.
   rex::X_STATUS Setup() override { return X_STATUS_SUCCESS; }
 
-  rex::X_RESULT GetCapabilities(uint32_t user_index, uint32_t /*flags*/,
-                           rex::input::X_INPUT_CAPABILITIES* out_caps) override {
-    if (user_index != 0) return X_ERROR_DEVICE_NOT_CONNECTED;
+  void EnumerateDevices(std::vector<rex::input::DeviceInfo>& out) override {
+    rex::input::DeviceInfo info;
+    info.id = kDeviceId;
+    info.name = "THP8 scripted input";
+    info.synthetic = true;
+    out.push_back(std::move(info));
+  }
+
+  rex::X_RESULT GetDeviceCapabilities(
+      rex::input::DeviceId id, uint32_t /*flags*/,
+      rex::input::X_INPUT_CAPABILITIES* out_caps) override {
+    if (id != kDeviceId) return X_ERROR_DEVICE_NOT_CONNECTED;
     if (out_caps) {
       std::memset(out_caps, 0, sizeof(*out_caps));
       out_caps->type = 0x01;      // XINPUT_DEVTYPE_GAMEPAD
@@ -771,9 +780,10 @@ class ScriptInputDriver : public rex::input::InputDriver {
   mutable std::atomic<uint64_t> poll_base_{0};
   mutable std::atomic<int64_t> time_base_{0};
 
-  rex::X_RESULT GetState(uint32_t user_index,
-                    rex::input::X_INPUT_STATE* out_state) override {
-    if (user_index != 0) return X_ERROR_DEVICE_NOT_CONNECTED;
+  rex::X_RESULT GetDeviceState(
+      rex::input::DeviceId id,
+      rex::input::X_INPUT_STATE* out_state) override {
+    if (id != kDeviceId) return X_ERROR_DEVICE_NOT_CONNECTED;
     if (!out_state) return X_ERROR_SUCCESS;
     // The replay clock. Two of them, and which one runs decides whether a
     // measured run is reproducible.
@@ -893,17 +903,22 @@ class ScriptInputDriver : public rex::input::InputDriver {
     return X_ERROR_SUCCESS;
   }
 
-  rex::X_RESULT SetState(uint32_t user_index,
-                    rex::input::X_INPUT_VIBRATION* /*vibration*/) override {
-    return user_index == 0 ? X_ERROR_SUCCESS : X_ERROR_DEVICE_NOT_CONNECTED;
+  rex::X_RESULT SetDeviceVibration(
+      rex::input::DeviceId id,
+      rex::input::X_INPUT_VIBRATION* /*vibration*/) override {
+    return id == kDeviceId ? X_ERROR_SUCCESS : X_ERROR_DEVICE_NOT_CONNECTED;
   }
 
-  rex::X_RESULT GetKeystroke(uint32_t user_index, uint32_t /*flags*/,
-                        rex::input::X_INPUT_KEYSTROKE* /*out*/) override {
-    return user_index == 0 ? X_ERROR_EMPTY : X_ERROR_DEVICE_NOT_CONNECTED;
+  rex::X_RESULT GetDeviceKeystroke(
+      rex::input::DeviceId id, uint32_t /*flags*/,
+      rex::input::X_INPUT_KEYSTROKE* /*out*/) override {
+    return id == kDeviceId ? X_ERROR_EMPTY : X_ERROR_DEVICE_NOT_CONNECTED;
   }
 
  private:
+  static constexpr rex::input::DeviceId kDeviceId =
+      static_cast<rex::input::DeviceId>(0x5448503853435250ull);
+
   void FireDueCommands(int64_t now) {
     const auto& commands = program_.commands;
     size_t next = next_command_.load(std::memory_order_relaxed);
@@ -980,25 +995,38 @@ class PollObserverDriver : public rex::input::InputDriver {
       : rex::input::InputDriver(nullptr, 0), observer_(std::move(observer)) {}
 
   rex::X_STATUS Setup() override { return X_STATUS_SUCCESS; }
-  rex::X_RESULT GetCapabilities(
-      uint32_t, uint32_t, rex::input::X_INPUT_CAPABILITIES*) override {
+
+  void EnumerateDevices(std::vector<rex::input::DeviceInfo>& out) override {
+    rex::input::DeviceInfo info;
+    info.id = kDeviceId;
+    info.name = "THP8 guest-thread observer";
+    info.synthetic = true;
+    out.push_back(std::move(info));
+  }
+
+  rex::X_RESULT GetDeviceCapabilities(
+      rex::input::DeviceId, uint32_t,
+      rex::input::X_INPUT_CAPABILITIES*) override {
     return X_ERROR_DEVICE_NOT_CONNECTED;
   }
-  rex::X_RESULT GetState(
-      uint32_t user_index, rex::input::X_INPUT_STATE*) override {
-    if (user_index == 0 && observer_) observer_();
+  rex::X_RESULT GetDeviceState(
+      rex::input::DeviceId id, rex::input::X_INPUT_STATE*) override {
+    if (id == kDeviceId && observer_) observer_();
     return X_ERROR_DEVICE_NOT_CONNECTED;
   }
-  rex::X_RESULT SetState(
-      uint32_t, rex::input::X_INPUT_VIBRATION*) override {
+  rex::X_RESULT SetDeviceVibration(
+      rex::input::DeviceId, rex::input::X_INPUT_VIBRATION*) override {
     return X_ERROR_DEVICE_NOT_CONNECTED;
   }
-  rex::X_RESULT GetKeystroke(
-      uint32_t, uint32_t, rex::input::X_INPUT_KEYSTROKE*) override {
+  rex::X_RESULT GetDeviceKeystroke(
+      rex::input::DeviceId, uint32_t,
+      rex::input::X_INPUT_KEYSTROKE*) override {
     return X_ERROR_DEVICE_NOT_CONNECTED;
   }
 
  private:
+  static constexpr rex::input::DeviceId kDeviceId =
+      static_cast<rex::input::DeviceId>(0x544850384F425356ull);
   PollObserver observer_;
 };
 

@@ -385,16 +385,28 @@ class RecordTapDriver : public rex::input::InputDriver {
 
   rex::X_STATUS Setup() override { return inner_->Setup(); }
 
-  rex::X_RESULT GetCapabilities(uint32_t user_index, uint32_t flags,
-                                rex::input::X_INPUT_CAPABILITIES* out_caps) override {
-    return inner_->GetCapabilities(user_index, flags, out_caps);
+  void EnumerateDevices(std::vector<rex::input::DeviceInfo>& out) override {
+    rex::input::DeviceInfo info;
+    info.id = kDeviceId;
+    info.name = "THP8 input recorder";
+    info.synthetic = true;
+    out.push_back(std::move(info));
   }
 
-  rex::X_RESULT GetState(uint32_t user_index,
-                         rex::input::X_INPUT_STATE* out_state) override {
+  rex::X_RESULT GetDeviceCapabilities(
+      rex::input::DeviceId id, uint32_t flags,
+      rex::input::X_INPUT_CAPABILITIES* out_caps) override {
+    if (id != kDeviceId) return X_ERROR_DEVICE_NOT_CONNECTED;
+    return inner_->GetCapabilities(0, flags, out_caps);
+  }
+
+  rex::X_RESULT GetDeviceState(
+      rex::input::DeviceId id,
+      rex::input::X_INPUT_STATE* out_state) override {
+    if (id != kDeviceId) return X_ERROR_DEVICE_NOT_CONNECTED;
     rex::input::X_INPUT_STATE state{};
-    rex::X_RESULT result = inner_->GetState(user_index, &state);
-    if (user_index == 0 && result == X_ERROR_SUCCESS) {
+    rex::X_RESULT result = inner_->GetState(0, &state);
+    if (result == X_ERROR_SUCCESS) {
       Sample s;
       s.t_ms = NowMs();
       s.buttons = static_cast<uint16_t>(state.gamepad.buttons);
@@ -410,14 +422,18 @@ class RecordTapDriver : public rex::input::InputDriver {
     return result;
   }
 
-  rex::X_RESULT SetState(uint32_t user_index,
-                         rex::input::X_INPUT_VIBRATION* vibration) override {
-    return inner_->SetState(user_index, vibration);
+  rex::X_RESULT SetDeviceVibration(
+      rex::input::DeviceId id,
+      rex::input::X_INPUT_VIBRATION* vibration) override {
+    if (id != kDeviceId) return X_ERROR_DEVICE_NOT_CONNECTED;
+    return inner_->SetState(0, vibration);
   }
 
-  rex::X_RESULT GetKeystroke(uint32_t user_index, uint32_t flags,
-                             rex::input::X_INPUT_KEYSTROKE* out_keystroke) override {
-    return inner_->GetKeystroke(user_index, flags, out_keystroke);
+  rex::X_RESULT GetDeviceKeystroke(
+      rex::input::DeviceId id, uint32_t flags,
+      rex::input::X_INPUT_KEYSTROKE* out_keystroke) override {
+    if (id != kDeviceId) return X_ERROR_DEVICE_NOT_CONNECTED;
+    return inner_->GetKeystroke(0, flags, out_keystroke);
   }
 
   void OnWindowAvailable(rex::ui::Window* window) override {
@@ -425,6 +441,8 @@ class RecordTapDriver : public rex::input::InputDriver {
   }
 
  private:
+  static constexpr rex::input::DeviceId kDeviceId =
+      static_cast<rex::input::DeviceId>(0x5448503852454344ull);
   std::unique_ptr<rex::input::InputSystem> inner_;
 };
 
