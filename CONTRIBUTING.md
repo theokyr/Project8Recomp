@@ -17,15 +17,15 @@ closed without an answer.
 **A Windows report.** This is the single most valuable thing anyone can send
 right now. v0.1.0 started on one reported Windows 10 machine but performed
 poorly; current complete builds have only been exercised under Proton. Whether
-one works or falls over on Windows, we want to know — see the Windows issue
-template.
+one works or fails on Windows, we want to know. See the Windows issue template.
 
 **A hash from another regional disc.** The launcher accepts one release today.
 If you own a PAL or NTSC-J disc, the SHA-256 of its `default.xex` and the size
 of that file are enough to add a row. Do not send the file.
 
-**Bug reports with logs.** `logs/` in your install folder, plus the terminal
-output.
+**Bug reports with logs.** Choose **Open logs folder** on the launcher home
+screen, then include the relevant text files and any terminal output. Do not
+attach game files.
 
 **Fixes.** See the open issues.
 
@@ -33,9 +33,9 @@ output.
 
 `src/`, `config/` and `patches/` are synchronised from the project's development
 tree. Pull requests against them are welcome and get read the same way as any
-other — but they may be applied as a patch and arrive in the next release,
-rather than appearing as your commit in this history. You will be credited in
-the change that carries them.
+other, but they may be applied as a patch and arrive in the next release rather
+than appearing as your commit in this history. You will be credited in the
+change that carries them.
 
 Everything else is edited here directly: the README, `docs/`, `tools/`,
 `.github/` and the licence files. A pull request against those is merged
@@ -70,7 +70,7 @@ once.
 **Headless testing cannot verify the launcher's UI.** There is no window manager
 in CI, so nothing delivers focus and synthetic input never reaches a control. CI
 proves the documents parse and the code paths run. Anything input-driven needs a
-human with a controller before it is called done — this has caught real defects
+human with a controller before it is called done. This has caught real defects
 that a full headless pass reported as green.
 
 **Settings render to argv by omission, not by empty values.** An unset setting
@@ -79,8 +79,8 @@ next argument and silently shifts the whole command line. `src/launcher/tests/`
 holds that rule; do not route around it.
 
 **The dump table is shared.** `src/common/supported_dumps.h` is used by both the
-launcher's identity check and the game's own gate. Do not copy it — two copies
-means one of them is untested.
+launcher's identity check and the game's own gate. Do not copy it; two copies
+mean one of them is untested.
 
 **The game's host code and the launcher are separate builds on purpose.** The
 launcher links no part of the SDK, so it still builds when the game does not.

@@ -20,7 +20,7 @@ Components: `libavcodec`, `libavformat`, `libavutil`, `libswresample`,
 | --- | --- |
 | Fork | `https://github.com/wmarti/FFmpeg.git` |
 | Commit | `0604b464c7cb4ebc94940cf1f324a3b26b87717c` |
-| Local modifications | none — the tree is used as the fork publishes it |
+| Local modifications | none; the tree is used as the fork publishes it |
 
 The fork commits per-platform configuration headers rather than generating them
 at build time. All eight (`config_{android,linux,macos,windows}_{x86_64,aarch64}.h`)
@@ -50,7 +50,7 @@ SDK, both published in full, so you can modify FFmpeg and rebuild rather than
 being handed object files to relink.
 
 1. Clone the fork at the commit above, or your own modified version of it.
-   Keep the LGPL configuration — a GPL build changes the licence of everything
+   Keep the LGPL configuration; a GPL build changes the licence of everything
    downstream of it.
 2. Build the ReXGlue SDK against your FFmpeg, with the patches in
    `patches/rexglue-sdk/` applied in the order that directory's README gives.

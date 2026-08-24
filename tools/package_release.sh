@@ -257,6 +257,15 @@ Licences for everything this is built from are in NOTICE.
 Full documentation: https://github.com/theokyr/Project8Recomp
 EOF
 
+if [ "$PLATFORM" = "macos-arm64" ]; then
+  cat >> "$STAGE/README.txt" <<'EOF'
+
+macOS: Homebrew is not required. The binaries are ad-hoc signed but not
+notarized, so on first launch right-click Project8Recomp, choose Open, then
+confirm Open.
+EOF
+fi
+
 say "stripping debug symbols"
 # Consistency, not just size. Debug info is inline in ELF and external on the
 # other two (.pdb, .dSYM), so shipping "the same build" three ways otherwise

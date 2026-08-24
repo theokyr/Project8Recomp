@@ -8,8 +8,8 @@ C++ ahead of time and compiled into a normal executable for your machine.
 > and its releases contain no disc image, original game executable, extracted
 > assets, or other files copied from the disc. The launcher reads a disc image you
 > supply from your own copy, checks it is a supported release, and sets up an
-> install on your machine. Nobody here has a copy to give you, and asking — in
-> an issue, a discussion, or anywhere else — will get the thread closed.
+> install on your machine. Nobody here has a copy to give you. Asking in an
+> issue, a discussion, or anywhere else will get the thread closed.
 
 **[Download the latest release →](../../releases/latest)**
 
@@ -39,7 +39,7 @@ C++ ahead of time and compiled into a normal executable for your machine.
 | Platform | Status |
 | --- | --- |
 | Linux x86_64 | **Verified.** The main development and testing platform. |
-| macOS arm64 | **v0.1.0 verified** on Apple Silicon. Correct, but slow; no v0.2.0 package yet — see [known issues](docs/KNOWN_ISSUES.md). |
+| macOS arm64 | **Complete v0.2.1 archive verified on Apple M1.** Self-contained and correct, but too slow in heavy scenes; see [known issues](docs/KNOWN_ISSUES.md). |
 | Windows x86_64 | **Experimental. Complete v0.2.0 build tested under Proton; not yet verified on real Windows.** |
 
 The Windows situation, plainly: everything is cross-compiled from Linux,
@@ -49,8 +49,8 @@ started, the late-game 2,600-plus-draw fixture rendered correctly, and the
 default frame cap sustained a 33.30 ms median there. Uncapped, the same Windows
 build measured 28.00 ms median versus 25.00 ms for the native Linux build.
 That is useful compatibility and performance evidence, but it is still not a
-test on Windows — Proton is a different implementation of the same interfaces,
-and the places it differs are where an untested port breaks.
+test on Windows. Proton is a different implementation of the same interfaces,
+and the places where it differs are precisely where an untested port can break.
 
 If you try the Windows launcher, please tell us what happened. "It opened and
 the buttons worked" is as useful to us as a crash report, and there is
@@ -59,7 +59,7 @@ the buttons worked" is as useful to us as a crash report, and there is
 ## What you need
 
 - Your own copy of Tony Hawk's Project 8 for Xbox 360.
-- A disc image of it (`.iso`). You do not need to extract it — the launcher
+- A disc image of it (`.iso`). You do not need to extract it; the launcher
   reads the image directly.
 - About 5 GB of free space.
 - A GPU with Vulkan support.
@@ -77,8 +77,8 @@ the buttons worked" is as useful to us as a crash report, and there is
 4. It checks the image. This takes well under a second and copies nothing yet.
    A disc that is not the supported release is refused here, before 4.7 GB is
    written rather than after.
-5. On a match it copies the game data into the same folder — a few minutes, and
-   you can stop it.
+5. On a match it copies the game data into the same folder. This takes a few
+   minutes, and you can stop it.
 6. The game starts. From then on `Project8Recomp` goes straight through the
    launcher to Play. Run `Project8Recomp --gui` whenever you want settings,
    setup status, or the normal launcher home screen.
@@ -89,11 +89,12 @@ so existing shortcuts continue to work. The new entry is a small wrapper over
 settings, single-instance handling, the supervisor, and crash cleanup stay on
 the same path.
 
-Everything lives in that one folder: the game data, your saves, your settings.
-Move it, copy it between your own machines, delete it — nothing is written
-anywhere else on your system.
+Everything lives in that one folder: the game data, your saves, and your
+settings. Move it, copy it between your own machines, or delete it. Nothing is
+written elsewhere on your system.
 
-**macOS:** the app is not notarized, so Gatekeeper will refuse a double-click.
+**macOS:** the archive includes its Vulkan runtime, so Homebrew is not required.
+It is ad-hoc signed but not notarized, so Gatekeeper will refuse a double-click.
 Right-click → **Open** → **Open**, once per install.
 
 **Windows:** the binary is not signed, so SmartScreen will show "Windows
@@ -132,13 +133,12 @@ runtime without a copy of the game has nothing to run.
 <summary><b>The launcher rejected my disc image. Why?</b></summary>
 
 It hashes `default.xex` inside the image and compares it against the releases
-this port was built from. Today that is one: the 2006 retail disc, listed in
-[docs/SETUP.md](docs/SETUP.md). It will tell you which of three things went
-wrong — not a disc image, a different game, or the right game from a different
-release.
+this port was built from. Today that is one: the 2006 retail disc listed in
+[docs/SETUP.md](docs/SETUP.md). It will distinguish three cases: a file that is
+not a disc image, a different game, or the right game from a different release.
 
 If you own a PAL or NTSC-J disc, the hash and size of its `default.xex` are
-genuinely useful to us — those two values are all it takes to add support for a
+genuinely useful to us. Those two values are all it takes to add support for a
 release. **Do not send the file itself.**
 
 The tool that does the checking will print them for you. From the folder you
@@ -165,17 +165,18 @@ Paste those two lines into an issue, along with the region printed on your disc.
 </details>
 
 <details>
-<summary><b>Where are my saves?</b></summary>
+<summary><b>Where are my saves and logs?</b></summary>
 
-In `saves/`, inside the folder you unpacked. The launcher has a button for it.
+Saves are in `saves/` and logs are in `logs/`, both inside the folder you
+unpacked. The launcher home screen has a button for each folder.
 </details>
 
 <details>
 <summary><b>Can I get more than 60 fps?</b></summary>
 
-Yes, by turning the cap off in the launcher's Display settings — but read the
-[known issues](docs/KNOWN_ISSUES.md) first, because in-level cutscenes break
-when you do.
+Yes, by turning the cap off in the launcher's Display settings. Read the
+[known issues](docs/KNOWN_ISSUES.md) first because in-level cutscenes break
+when you do this.
 </details>
 
 <details>
@@ -208,11 +209,11 @@ non-commercial preservation project. It is not affiliated with, sponsored by, or
 endorsed by Activision, Neversoft, Tony Hawk, Microsoft, or any other rights
 holder. All trademarks and copyrights belong to their respective owners.
 
-**What the licence covers.** The source in this repository — the launcher, the
-disc identity worker, the supervisor, the game's host code, the recompiler
-configuration, the build scripts and the documentation — is under the BSD
-3-Clause License ([LICENSE](LICENSE)). Third-party components are used under
-their own licences, reproduced in full in [NOTICE](NOTICE).
+**What the licence covers.** The source in this repository includes the
+launcher, disc identity worker, supervisor, game host code, recompiler
+configuration, build scripts, and documentation. It is under the BSD 3-Clause
+License ([LICENSE](LICENSE)). Third-party components are used under their own
+licences, reproduced in full in [NOTICE](NOTICE).
 
 It does **not** cover anything derived from the game. The translation units the
 recompiler generates from `default.xex` are not published as source and are not
@@ -224,16 +225,16 @@ game files.
 **Do not request or share game files.** Issues, discussions and pull requests
 asking where to obtain the game will be closed without an answer. Pull requests
 containing game assets, decrypted intermediates, platform keys or generated
-translation units will be rejected — see [CONTRIBUTING.md](CONTRIBUTING.md).
+translation units will be rejected; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits
 
-- **[ReXGlue](https://github.com/rexglue/rexglue-sdk)** by Tom Clay — the static
+- **[ReXGlue](https://github.com/rexglue/rexglue-sdk)** by Tom Clay: the static
   recompilation runtime this is built on.
-- **[Xenia](https://github.com/xenia-project/xenia)** — the Xbox 360 emulation
+- **[Xenia](https://github.com/xenia-project/xenia)**: the Xbox 360 emulation
   work ReXGlue derives from. None of this exists without it.
 - **[XenonRecomp](https://github.com/hedge-dev/XenonRecomp)** and
-  **[rexdex's recompiler](https://github.com/rexdex/recompiler)** — for
+  **[rexdex's recompiler](https://github.com/rexdex/recompiler)**: for
   pioneering this approach on the platform.
 - **FFmpeg** (LGPL-2.1), **RmlUi** (MIT), **SDL3** and **SDL3_image** (Zlib),
   **FreeType**, **Noto Sans** (OFL-1.1).

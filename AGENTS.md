@@ -10,9 +10,9 @@ checkpointed releases.
 - **`src/`, `config/` and `patches/` are synchronised from the project's
   development tree.** Changes to them are applied there and arrive here in a
   release, so a pull request against those paths may be applied as a patch
-  rather than merged as a commit. It will be credited either way. Everything
-  else — the README, `docs/`, `tools/`, `.github/` and the licence files —
-  belongs to this repository and is edited here directly.
+  rather than merged as a commit. It will be credited either way. The README,
+  `docs/`, `tools/`, `.github/`, and the licence files belong to this repository
+  and are edited here directly.
 - **This repo has exactly one goal:** make it easy for someone who owns a legal
   copy to end up with a ready-to-play build. It is not a research dump.
 
@@ -31,11 +31,11 @@ If you are unsure whether something counts: it counts.
 ## Layout
 
 ```
-src/launcher/    the GUI launcher. Links no SDK — builds anywhere, needs no dump.
+src/launcher/    the GUI launcher. Links no SDK; builds anywhere, needs no dump.
 src/identify/    disc identity + extraction. Links the SDK; does what the GUI must not.
 src/game/        the game's host code. Needs the SDK and generated sources.
 src/common/      shared between the identity worker and the game's dump gate.
-config/          recompiler configuration — addresses, sizes, names.
+config/          recompiler configuration: addresses, sizes, names.
 patches/         patches against the SDK the port depends on.
 tools/           staging, licence generation, and the release gates.
 docs/            end-user and contributor documentation.
@@ -49,8 +49,8 @@ linker. Disc identity is answered by a separate binary that does link the SDK.
 Do not "simplify" this by merging them.
 
 **One dump table, two gates.** `src/common/supported_dumps.h` is used by both
-the launcher's identity check and the game's own startup gate. Never copy it —
-two copies means one of them is never tested.
+the launcher's identity check and the game's own startup gate. Never copy it;
+two copies mean one of them is never tested.
 
 **Settings render to argv by omission.** An unset setting emits no flag at all,
 never `--flag=`. An empty value is consumed as the next argument and silently
@@ -91,7 +91,7 @@ Windows.
 
 ## Comments
 
-Explain why, not what — particularly when the obvious approach was tried and
+Explain why, not what, particularly when the obvious approach was tried and
 failed. That history is the most valuable thing in a comment and the easiest to
 lose.
 

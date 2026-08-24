@@ -1,5 +1,5 @@
 name: Windows report
-description: You ran the Windows build. Tell us what happened — working or not.
+description: You ran the Windows build. Tell us what happened, working or not.
 title: "[Windows] "
 labels: [windows, needs-triage]
 body:
@@ -68,7 +68,8 @@ body:
     attributes:
       label: Output and logs
       description: >
-        Console output, and anything in the `logs/` folder of your install.
+        In the launcher, choose Open logs folder. Paste the relevant text files
+        here, along with any console output. Do not attach game files.
       render: shell
 
   - type: checkboxes

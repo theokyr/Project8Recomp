@@ -12,23 +12,32 @@ The cause is localised but not fixed. The variable is the guest frame rate and
 nothing else: uncapped, the game runs at ~200 fps and the in-level cutscene
 update advances with it. Capped, it is correct. The front-end attract cinematic
 is immune, so the front-end cinematic player is timebase-correct and the
-in-level cutscene update is different code — that is the next thing to read.
+in-level cutscene update is different code. That is the next thing to read.
 
 One thing this is *not*: an earlier belief that pressing F5 fixed it was wrong.
 Every session where F5 appeared to help was also a capped session.
 
 ## macOS performance
 
-The v0.1.0 Apple Silicon package works and reaches gameplay, but is not fast.
-The ~100 FPS figure comes from a desktop Linux machine with a discrete GPU and
-does not transfer: on an M1, Free Skate reaches gameplay at roughly 6 FPS. It
-is functionally correct and not performance-playable. There is no v0.2.1 macOS
-package yet; v0.1.0 remains available from the previous release.
+v0.2.1 restores a complete, self-contained Apple Silicon archive. It bundles
+the Vulkan loader and MoltenVK, so players do not need Homebrew. The exact
+archive was tested on a 2020 Apple M1 MacBook Pro: the packaged supervisor
+started the game, the packaged Vulkan libraries loaded, and the marked fixture
+reached a visually verified 2,627-draw Funpark frame.
+
+It is functionally correct but not performance-playable in that severe scene.
+Across the fixture's 2,500-plus-draw rows, mean frame time was 240.53 ms (4.16
+effective FPS), with 234.31 ms p50 and 253.32 ms p95; the process used roughly
+317% CPU. The much higher Linux desktop and Steam Deck figures elsewhere in the
+documentation do not transfer to the base M1's MoltenVK path.
+
+The binaries are ad-hoc signed but not notarized. Gatekeeper therefore requires
+the right-click → Open step documented in the main README.
 
 ## Windows is mitigated and Proton-tested, not hardware-verified
 
-Everything for Windows — the launcher, the disc worker, the supervisor and the
-game itself — is built for the MSVC ABI and exercised under Proton. A community
+The launcher, disc worker, supervisor, and game are all built for the MSVC ABI
+and exercised under Proton. A community
 report confirms that v0.1.0 started on Windows 10, but its CPU use and pacing
 were unusable there. The maintainers do not own a Windows machine, so the
 complete v0.2.0 build has not been verified on real Windows hardware.
@@ -81,10 +90,10 @@ not been exercised on real Windows hardware.
 
 Headless testing can prove that code paths run. It cannot prove a user can
 reach them: with no window manager there is nothing to deliver focus, so
-synthetic clicks and keypresses never land. An earlier round of this found three
-defects only when someone sat down with a controller — every button silently
-discarding its click, B doing nothing, and Play producing a black screen from a
-missing GPU plugin flag.
+synthetic clicks and keypresses never land. An earlier round found three
+defects only when someone sat down with a controller: every button silently
+discarded its click, B did nothing, and Play produced a black screen because a
+GPU plugin flag was missing.
 
 So these are known-unverified rather than known-good:
 

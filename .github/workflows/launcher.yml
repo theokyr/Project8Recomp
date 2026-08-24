@@ -116,7 +116,7 @@ jobs:
         run: ctest --test-dir build/launcher --output-on-failure
 
       # Parses every RML/RCSS document and fails on any diagnostic. It cannot
-      # prove a control can be activated — no window manager, so synthetic input
+      # prove a control can be activated: no window manager, so synthetic input
       # never lands.
       - name: Check UI documents
         if: runner.os == 'Linux'

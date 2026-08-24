@@ -10,7 +10,7 @@ thread closed. That is the only thing this page will say on the subject.
 ## What the launcher accepts
 
 A disc image of the 2006 retail release, as a `.iso` (or `.img`). The launcher
-reads it directly — there is no need to extract it yourself first.
+reads it directly, so there is no need to extract it yourself first.
 
 | Release | `default.xex` SHA-256 | Size |
 | --- | --- | --- |
@@ -29,11 +29,11 @@ bug.
 | World v1.0 (USA/Europe) | `415607DD` | `2CB96AE4` | Region-free. **The supported one.** |
 | Japan v1.0 | `41560810` | `05728741` | NTSC-J. A different title ID, so a different executable. |
 | Korea | unknown | unknown | A physical release is confirmed to exist; its disc identity is unresolved. |
-| Demo v1.0 | — | `2932D558` | Disc label AV202950W0X11. |
+| Demo v1.0 | N/A | `2932D558` | Disc label AV202950W0X11. |
 
 Adding a release is a data change rather than a change to the gate, but it
-needs the executable's hash confirmed against a disc someone actually holds —
-we will not add a row on hearsay.
+needs the executable's hash confirmed against a disc someone actually holds.
+We will not add a row on hearsay.
 
 So if you own any of these, the SHA-256 and size of its `default.xex` are the
 most useful thing you could send us. **Do not send the file.** The Korean disc
@@ -49,7 +49,7 @@ all.
    things went wrong: not a disc image at all, a different game, or the right
    game from a different release.
 4. On a match, it copies the game data into a `game/` folder next to the
-   launcher. This is the slow step — a few minutes, and you can stop it.
+   launcher. This step takes a few minutes, and you can stop it.
 5. It writes `config/install.toml` and hands off to the game.
 
 After that, the launcher goes straight to a Play button and you do not need the
@@ -131,5 +131,6 @@ every control on the screen.
 - **The game will not start and says it cannot find game data.** The `game/`
   folder is missing or incomplete. Delete `config/install.toml` and run the
   launcher again to redo setup.
-- **Anything else.** `logs/` and the terminal output are what a bug report
-  needs.
+- **Anything else.** Choose **Open logs folder** on the launcher home screen.
+  The relevant text files there, plus any terminal output, are what a bug report
+  needs. Do not attach game files.

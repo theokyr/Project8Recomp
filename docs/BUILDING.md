@@ -17,10 +17,10 @@ FreeType. RmlUi is fetched by CMake at a pinned commit.
 ```sh
 # Arch
 sudo pacman -S cmake ninja sdl3 sdl3_image freetype2
-# Debian/Ubuntu — SDL3 may not be packaged yet; see tools/ci/build_sdl3.sh
+# Debian/Ubuntu: SDL3 may not be packaged yet; see tools/ci/build_sdl3.sh
 sudo apt install cmake ninja-build libfreetype-dev
-# macOS
-brew install cmake ninja sdl3 sdl3_image freetype
+# macOS (MoltenVK and the Vulkan loader are needed for a complete game archive)
+brew install cmake ninja sdl3 sdl3_image freetype molten-vk vulkan-loader
 
 cmake -S src/launcher -B build/launcher -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build/launcher
@@ -37,8 +37,8 @@ repository substitutes for it.
 You will need:
 
 1. **The rexglue SDK**, built with the patches in `patches/rexglue-sdk/`.
-   Apply them in the machine-readable order in `patches/rexglue-sdk/series` —
-   it is not numeric order, and the README says why. Without them the game runs
+   Apply them in the machine-readable order in `patches/rexglue-sdk/series`.
+   It is not numeric order, and the README says why. Without them the game runs
    about four times slower, and on macOS it does not run at all.
 2. **Your extracted game data**, which the launcher produces, or which you can
    extract yourself with `thps_p8_identify --identify_disc=... --extract_to=...`.
@@ -60,8 +60,8 @@ cmake --build build/game
 
 The generated sources are not in this repository and never will be: they are a
 mechanical translation of a copyrighted binary. They are regenerated on your
-machine from configuration that is committed here — addresses, sizes, names and
-table entries, which are facts about a binary rather than the binary.
+machine from committed configuration containing addresses, sizes, names, and
+table entries. Those are facts about a binary rather than the binary itself.
 
 ## Building for Windows, from Linux
 
@@ -92,7 +92,7 @@ and enabling it pulls in `thirdparty/dxbc/DXBCChecksum.cpp`, which is
 AMD-copyrighted and whose redistribution terms this project has not resolved.
 Vulkan avoids that file, and is the backend actually tested on Linux and macOS.
 
-Windows builds are not tested on Windows hardware — see
+Windows builds are not tested on Windows hardware. See
 [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
 
 ## The disc identity worker
@@ -123,6 +123,11 @@ tools/package_release.sh --platform linux-x86_64 --version vX.Y.Z \
 The Windows package also needs the app-local Visual C++ runtime DLLs beside the
 launcher. Hosted CI stages them in its Windows launcher artifact; the packager
 refuses a Windows archive when they are absent.
+
+The macOS package must be assembled on Apple Silicon. It copies the Homebrew
+Vulkan loader and MoltenVK into the archive, rewrites their install names, and
+ad-hoc signs the finished Mach-O files. Those Homebrew packages are build-time
+inputs only; a player does not need Homebrew.
 
 ## Before publishing anything
 

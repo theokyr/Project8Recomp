@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.2.1 — accepted Steam Deck frontier refresh
+## v0.2.1: accepted Steam Deck frontier refresh
 
 This patch release moves the public build from the p0p22 runtime configuration
 shipped in v0.2.0 to the accepted p0p39 Steam Deck frontier. Packaging,
@@ -30,12 +30,37 @@ capture is inactive during normal play.
 
 ### Player-facing wording
 
-The launcher now says directly that the port contains no game content and will
-never download any. This is a wording clarification only: setup still reads a
+The launcher now says directly that the port contains no game content and does
+not download any. This is a wording clarification only: setup still reads a
 disc image supplied from the player's own copy, writes the extracted data into
 the portable install, and sends nothing elsewhere.
 
-## v0.2.0 — Steam Deck performance and release packaging
+The launcher copy has also been tightened across setup, settings, recovery, and
+error states. Its home screen now has separate **Open save folder** and **Open
+logs folder** buttons, and the issue forms direct reporters to the latter. Paths
+and display names are escaped before insertion into RML, so characters such as
+`<` and `&` in a local filename remain text instead of being parsed as markup.
+
+### Complete Apple Silicon release restored
+
+v0.2.1 again ships a complete `macos-arm64` archive, restoring the platform
+package that v0.1.0 had and v0.2.0 omitted. The archive now carries the Vulkan
+loader and MoltenVK itself, uses their adjacent manifest even when started from
+Finder, and ad-hoc signs every Mach-O file after its install names and symbols
+are normalised. A player does not need Homebrew; the archive is self-contained,
+but it remains neither Developer ID-signed nor notarized, so the documented
+right-click → Open step still applies.
+
+The exact release candidate was exercised on a 2020 Apple M1 MacBook Pro. Its
+packaged supervisor started the game, the bundled Vulkan loader and MoltenVK
+were loaded, and the marked fixture reached a visually verified Funpark frame
+at 2,627 draws. This restores functional support, but it is not a performance
+claim. The 2,500-plus-draw rows averaged **240.53 ms / 4.16
+effective FPS** (234.31 ms p50, 253.32 ms p95), while the process used roughly
+**317% CPU** during the run. Apple Silicon remains too slow for comfortable
+play in that severe scene.
+
+## v0.2.0: Steam Deck performance and release packaging
 
 v0.2.0 promotes the runtime configuration measured on Steam Deck, fixes the
 resolution control that v0.1.0 exposed but did not actually apply, and replaces
@@ -61,7 +86,7 @@ release archives before tagging.
   binaries, so a clean player machine does not need a separate redistributable
   installer before the wrapper can start.
 
-### Resolution changes now take effect — resolves #2
+### Resolution changes now take effect (resolves #2)
 
 The launcher previously saved and emitted a resolution choice while the
 runtime remained in its default borderless-fullscreen mode. Borderless
@@ -76,13 +101,13 @@ was discarded and every selection looked identical.
 - Argument-rendering tests cover named modes, 1280x800, implicit windowed mode,
   and explicit-fullscreen precedence.
 
-### Windows pacing and CPU use — mitigates #1
+### Windows pacing and CPU use (mitigates #1)
 
 The v0.1.0 runtime disabled SDL's Windows timer resolution. A 16.67 ms vblank
 deadline could therefore wake at 31.25 ms, after which the worker delivered one
 vblank and discarded the other elapsed interval. The guest could be paced near
-32 Hz while threads waiting for that counter continued consuming CPU—the same
-shape reported in #1.
+32 Hz while threads waiting for that counter continued consuming CPU. This is
+the same shape reported in #1.
 
 v0.2.0 uses a high-resolution deadline timer on Windows, keeps SDL's timer
 resolution enabled, and performs bounded vblank catch-up after a late wake.
@@ -131,7 +156,7 @@ regression.
   GLIBC 2.39 / GLIBCXX 3.4.32 ceiling and redistribution boundary, and smoke
   tests the complete Linux and Windows ZIPs on Deck before any tag exists.
 
-## v0.1.0 — first public release
+## v0.1.0: first public release
 
 The port is playable start to finish on Linux and macOS from a copy of the game
 you own.
@@ -142,10 +167,10 @@ you own.
   disc, copies the game, and starts it. After the first run it is a Play button.
 - **Controller support** throughout the launcher and the game, including
   plugging one in after the launcher is already open.
-- **Display settings** — resolution, which monitor, windowed or fullscreen, and
-  the frame rate cap — saved in `config/settings.toml`.
+- **Display settings:** resolution, monitor, windowed or fullscreen mode, and
+  the frame rate cap, saved in `config/settings.toml`.
 - **Portable install.** Everything lives in one folder. Move it, copy it between
-  your own machines, delete it — nothing is written anywhere else.
+  your own machines, or delete it. Nothing is written anywhere else.
 
 ### Refusing bad input
 
@@ -164,7 +189,7 @@ Roughly 100 fps uncapped on a desktop Linux machine with a discrete GPU, up from
 they are in `patches/rexglue-sdk/`.
 
 macOS runs natively on Apple Silicon and is functionally correct but much
-slower — see [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md).
+slower. See [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md).
 
 ### Platforms
 

@@ -10,4 +10,4 @@
 - [ ] The launcher builds and `ctest` passes.
 - [ ] If this touches a third-party dependency, `NOTICE` was regenerated.
 - [ ] If this changes anything input-driven in the launcher, I drove it myself
-      with a controller or a mouse — CI cannot verify that.
+      with a controller or a mouse. CI cannot verify that.

@@ -2,7 +2,7 @@
 # Verify no shipped binary links GPL binutils.
 #
 # The recompiler uses binutils to disassemble; the runtime must not. If this
-# fails, fix the link line — do not relicense around it.
+# fails, fix the link line; do not relicense around it.
 #
 #   tools/check_gpl_boundary.sh <binary-or-dir> [more...]
 

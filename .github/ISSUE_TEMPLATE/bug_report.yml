@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         **Do not attach game files, disc images, or `default.xex`**, and do not
-        ask where to obtain the game — those issues are closed without an answer.
+        ask where to obtain the game. Those issues are closed without an answer.
 
   - type: dropdown
     id: platform
@@ -33,8 +33,8 @@ body:
     attributes:
       label: Where
       options:
-        - Launcher — first-run setup
-        - Launcher — everything else
+        - "Launcher: first-run setup"
+        - "Launcher: everything else"
         - The game itself
         - Building from source
     validations:
@@ -52,7 +52,9 @@ body:
     id: logs
     attributes:
       label: Logs
-      description: Terminal output, and anything in the `logs/` folder.
+      description: >
+        In the launcher, choose Open logs folder. Paste the relevant text files
+        here, along with any terminal output. Do not attach game files.
       render: shell
 
   - type: checkboxes
