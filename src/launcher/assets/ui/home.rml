@@ -9,11 +9,9 @@
 			<header>
 				<h1 class="wordmark">
 					<span class="line1">TONY HAWK'S</span><br/>
-					<!-- RmlUi's entity table is not HTML's: &mdash; renders literally.
-					     Use the character, or a numeric entity. -->
 					<span class="line2">PROJECT 8</span>
 				</h1>
-				<p class="subtitle">Xbox 360, 2006 &#8212; running natively on this machine.</p>
+				<p class="subtitle">Xbox 360, 2006. Running natively on this machine.</p>
 			</header>
 
 			<div class="row">
@@ -28,12 +26,13 @@
 			     the status as a sentence, and repeating it as a heading says the
 			     same thing twice in two type sizes. SetText("heading") simply
 			     finds nothing, which is the intended no-op. -->
-			<p id="detail" class="subtitle">Your game is set up. Nothing else needs doing.</p>
+			<p id="detail" class="subtitle">Your game is set up on this machine.</p>
 
 			<div class="panel panel-ready actions">
 				<button id="play" class="primary">Play</button>
 				<button id="settings" class="ghost">Settings</button>
 				<button id="folder" class="ghost">Open save folder</button>
+				<button id="logs" class="ghost">Open logs folder</button>
 				<button id="about" class="ghost">About</button>
 			</div>
 
@@ -59,7 +58,7 @@
 					</button>
 				</div>
 				<div class="setting-row">
-					<span class="setting-label">Window</span>
+					<span class="setting-label">Display mode</span>
 					<div class="spacer"/>
 					<button id="set_fullscreen" class="ghost setting-value">
 						<span id="set_fullscreen_value">Game default</span>
@@ -74,7 +73,7 @@
 				</div>
 				<p class="setting-group">Performance</p>
 				<div class="setting-row">
-					<span class="setting-label">Enhancements</span>
+					<span class="setting-label">Performance preset</span>
 					<div class="spacer"/>
 					<button id="set_performance" class="ghost setting-value">
 						<span id="set_performance_value">On</span>
@@ -82,8 +81,8 @@
 				</div>
 
 				<p id="settings_note" class="footer">
-					Saved as you change them. Choosing a window size uses Windowed mode
-					unless you explicitly choose Fullscreen.
+					Changes are saved immediately. Choosing a window size uses Windowed
+					mode unless you explicitly choose Fullscreen.
 				</p>
 				<div class="actions">
 					<button id="settings_back" class="primary">Back</button>
@@ -105,10 +104,10 @@
 					respective owners.
 				</p>
 				<p class="footer">
-					Built on ReXGlue (BSD-3-Clause, with Xenia) and uses FFmpeg
-					(LGPL-2.1), RmlUi (MIT), SDL3 and SDL3_image (Zlib), FreeType (FTL)
-					and Noto Sans (OFL-1.1). Full texts are in the NOTICE file beside
-					this program.
+					Built with ReXGlue (BSD-3-Clause, with Xenia), FFmpeg (LGPL-2.1),
+					RmlUi (MIT), SDL3 and SDL3_image (Zlib), FreeType (FTL), and Noto
+					Sans (OFL-1.1). Full licence texts are in the NOTICE file beside this
+					program.
 				</p>
 				<div class="actions">
 					<button id="about_back" class="primary">Back</button>
@@ -116,11 +115,11 @@
 			</div>
 
 			<div class="panel panel-debris actions">
-				<button id="reclaim" class="primary">Free it and continue</button>
+				<button id="reclaim" class="primary">Free memory and continue</button>
 			</div>
 
 			<div class="panel panel-blocked actions">
-				<button id="stop" class="primary">Stop the running copy</button>
+				<button id="stop" class="primary">Stop the game</button>
 			</div>
 
 			<div class="panel panel-progress">
@@ -128,8 +127,8 @@
 			</div>
 
 			<p class="footer">
-				This port contains no game content and will never download any.
-				Your disc is read, never modified, and never sent anywhere.
+				This port contains no game content and never downloads any.
+				Your disc image was read only during setup. It was never modified or sent anywhere.
 			</p>
 		</div>
 	</main>

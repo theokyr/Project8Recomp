@@ -17,7 +17,7 @@
 			</header>
 
 			<h2 id="heading">Set up your game</h2>
-			<p id="detail" class="subtitle">Choose your disc image and this will do the rest.</p>
+			<p id="detail" class="subtitle">Choose the disc image made from your own copy.</p>
 
 			<div id="disc_path" class="path panel-path"></div>
 
@@ -62,8 +62,8 @@
 			</div>
 
 			<p class="footer">
-				This port contains no game content and will never download any.
-				Your disc image is read, never modified, and never sent anywhere.
+				This port contains no game content and never downloads any.
+				Your disc image is read only during setup. It is never modified or sent anywhere.
 			</p>
 		</div>
 	</main>

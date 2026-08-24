@@ -137,7 +137,7 @@ class LauncherApp {
   CheckResult RunCheck() const;
   // Re-runs --check and moves home to ready / debris / blocked accordingly.
   void RefreshHomeState();
-  void OpenSaveFolder() const;
+  void OpenPortableFolder(const char* folder) const;
   // Reads the breadcrumb the previous run left, if any.
   void ReadLastRun();
 

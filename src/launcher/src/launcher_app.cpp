@@ -13,6 +13,7 @@
 
 #include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/Elements/ElementFormControl.h>
+#include <RmlUi/Core/StringUtilities.h>
 
 namespace thps {
 namespace {
@@ -62,8 +63,8 @@ Copy CopyFor(State s) {
   switch (s) {
     case State::kWelcome:
       return {"Set up your game",
-              "Choose your Tony Hawk's Project 8 disc image and this will do the rest. "
-              "It stays where it is - nothing is moved, changed or uploaded."};
+              "Choose the disc image made from your own Tony Hawk's Project 8 copy. "
+              "The image stays where it is. Nothing is moved, changed, or uploaded."};
     case State::kPicking:
       return {"Choose your disc image", "Pick the file you made from your own disc."};
     case State::kVerifying:
@@ -76,11 +77,11 @@ Copy CopyFor(State s) {
     case State::kFailNotDisc:
       return {"That file is not a game disc",
               "It does not look like a disc image. Choose the file you made from your "
-              "Tony Hawk's Project 8 disc - usually a .iso file."};
+              "Tony Hawk's Project 8 disc, usually an .iso file."};
     case State::kFailWrongBuild:
       return {"That is a different release",
               "This is Tony Hawk's Project 8, but a different release of it than this port was "
-              "built from. Only the release listed on the previous screen will work."};
+              "built from. Only the supported 2006 retail disc works with this build."};
     case State::kFailNotGame:
       return {"That is a different game",
               "The disc image opened, but it is not Tony Hawk's Project 8."};
@@ -99,24 +100,25 @@ Copy CopyFor(State s) {
     case State::kCancelled:
       return {"Setup stopped",
               "The copy was stopped and the partly-copied files have been removed. "
-              "Nothing was left behind."};
+              "No partial game files remain."};
     case State::kReady:
-      return {"Ready to play", "Your game is set up. Nothing else needs doing."};
+      return {"Ready to play", "Your game is set up on this machine."};
     case State::kStarting:
-      return {"Starting", "Handing over to the game."};
+      return {"Starting", "Opening the game."};
     case State::kDebris:
       // "orphaned shared-memory segment" is exactly the vocabulary to avoid.
       // What a player needs to know is that a past crash left memory behind and
       // one button gets it back.
       return {"Some memory needs freeing",
-              "A previous session ended badly and left memory in use. Free it and you can play."};
+              "A previous session stopped unexpectedly and left temporary game memory in use. "
+              "Free it before starting again."};
     case State::kBlocked:
       return {"The game is already running",
               "Close the running copy first, or stop it from here."};
     case State::kSettings:
-      return {"Settings", "These apply the next time you press Play."};
+      return {"Settings", "Changes apply the next time you press Play."};
     case State::kAbout:
-      return {"About", "What this is, and what it is built from."};
+      return {"About", "About this port and its third-party software."};
   }
   return {"", ""};
 }
@@ -486,7 +488,10 @@ void LauncherApp::ApplyStateClass() {
 void LauncherApp::SetText(const char* element_id, const std::string& text) {
   if (!active_) return;
   if (Rml::Element* e = active_->GetElementById(element_id)) {
-    e->SetInnerRML(text);
+    // Paths and display names are untrusted text. SetInnerRML parses markup,
+    // so escape every value before inserting it; a filename containing '<' or
+    // '&' must remain visible text rather than becoming a broken RML element.
+    e->SetInnerRML(Rml::StringUtilities::EncodeRml(text));
   }
 }
 
@@ -668,7 +673,7 @@ void LauncherApp::Poll() {
       }
       char text[160];
       if (extract_total_.load() > 0) {
-        std::snprintf(text, sizeof(text), "%d%% - %s of %s", int(fraction * 100.0),
+        std::snprintf(text, sizeof(text), "%d%% (%s of %s)", int(fraction * 100.0),
                       HumanBytes(extract_done_.load()).c_str(),
                       HumanBytes(extract_total_.load()).c_str());
       } else {
@@ -703,7 +708,9 @@ void LauncherApp::OnAction(const Rml::String& id) {
     ShowScreen(Screen::kHome);
     RefreshHomeState();
   } else if (id == "folder") {
-    OpenSaveFolder();
+    OpenPortableFolder("saves");
+  } else if (id == "logs") {
+    OpenPortableFolder("logs");
   } else if (id == "cancel_extract") {
     CancelExtract();
   } else if (id == "reclaim") {
@@ -1033,12 +1040,12 @@ void LauncherApp::ReadLastRun() {
                        : "Your last session did not finish cleanly. You can play again from here.";
 }
 
-void LauncherApp::OpenSaveFolder() const {
+void LauncherApp::OpenPortableFolder(const char* folder) const {
   std::error_code ec;
-  const std::filesystem::path saves = portable_dir_ / "saves";
-  std::filesystem::create_directories(saves, ec);
-  if (!platform::OpenFolder(saves)) {
-    std::fprintf(stderr, "thps_p8_gui: could not open %s\n", saves.string().c_str());
+  const std::filesystem::path path = portable_dir_ / folder;
+  std::filesystem::create_directories(path, ec);
+  if (!platform::OpenFolder(path)) {
+    std::fprintf(stderr, "thps_p8_gui: could not open %s\n", path.string().c_str());
   }
 }
 
