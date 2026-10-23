@@ -220,7 +220,8 @@ fi
 if [ "${PLATFORM#macos}" != "$PLATFORM" ]; then
   say "bundling macOS dependencies"
   bash "$HERE/tools/ci/bundle_macos.sh" "$STAGE" \
-    "$STAGE/thps_p8_gui" "$STAGE/thps_p8" "$STAGE/thps_p8_identify" "$STAGE/thps_p8_launch" \
+    "$STAGE/Project8Recomp" "$STAGE/thps_p8_gui" "$STAGE/thps_p8" \
+    "$STAGE/thps_p8_identify" "$STAGE/thps_p8_launch" \
     "$STAGE/libvulkan.1.dylib" "$STAGE/libMoltenVK.dylib" \
     > /dev/null
   # An absolute Homebrew or local build path left in any binary means the

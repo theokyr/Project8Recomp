@@ -61,6 +61,10 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja cmake sdl3 sdl3_image freetype
 
+      - name: Test macOS dependency bundling
+        if: runner.os == 'macOS'
+        run: python3 -m unittest discover -s tools/ci/tests -v
+
       # Windows deliberately avoids Git Bash and Ninja. Bash rewrites PATH into
       # Unix form, which CMake - a native Windows program - cannot parse, so it
       # finds neither the compiler nor Ninja even with the MSVC environment
@@ -182,6 +186,12 @@ jobs:
             chmod +x tools/ci/bundle_macos.sh
             ./tools/ci/bundle_macos.sh "$out" \
               "$out/thps_p8_gui" "$out/Project8Recomp"
+            # Bundling changes load commands and invalidates linker signatures.
+            # The full release packager signs after stripping; this standalone
+            # launcher artifact must also be signed after its last mutation.
+            for binary in "$out/thps_p8_gui" "$out/Project8Recomp" "$out"/*.dylib; do
+              codesign --force --sign - --timestamp=none "$binary"
+            done
           fi
           ls -la "$out"
           test -f "$out/thps_p8_gui" || test -f "$out/thps_p8_gui.exe"

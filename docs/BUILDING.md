@@ -132,6 +132,20 @@ Vulkan loader and MoltenVK into the archive, rewrites their install names, and
 ad-hoc signs the finished Mach-O files. Those Homebrew packages are build-time
 inputs only; a player does not need Homebrew.
 
+Mac dependency bundling uses Python 3 and Apple's command-line tools. It follows
+absolute, `@rpath`, `@loader_path`, and `@executable_path` imports before
+rewriting them to adjacent libraries, and refuses unresolved imports. Run its
+native regression tests on macOS without an SDK or disc image:
+
+```sh
+python3 -m unittest discover -s tools/ci/tests -v
+```
+
+The tests compile small fixture libraries, remove their original locations, and
+launch the relocated bundle so libraries on the build machine cannot hide a
+missing dependency. The bundler leaves signing to the caller after stripping
+and other mutations; `tools/package_release.sh` already performs that step.
+
 ## Before publishing anything
 
 ```sh
